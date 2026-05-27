@@ -6,28 +6,46 @@ export function easeInOutCubic(t: number): number {
   return t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
 }
 
-/** Light polish after keyframe blend — keeps head stable above the torso. */
+/** Light polish after keyframe blend — torso counter-rotation and head stability. */
 export function humanizePose(
   pose: Record<JointName, JointPoint>,
-  _phase: number,
+  phase: number,
 ): Record<JointName, JointPoint> {
   const out = { ...pose } as Record<JointName, JointPoint>;
   const shoulderMidX = (pose.shoulder_l.x + pose.shoulder_r.x) / 2;
   const shoulderMidY = (pose.shoulder_l.y + pose.shoulder_r.y) / 2;
+  const hipMidX = (pose.hip_l.x + pose.hip_r.x) / 2;
+  const hipMidY = (pose.hip_l.y + pose.hip_r.y) / 2;
 
+  const torsoTwist = (hipMidX - shoulderMidX) * 0.12;
   out.head = {
-    x: pose.head.x * 0.65 + shoulderMidX * 0.35,
+    x: pose.head.x * 0.6 + shoulderMidX * 0.4 + torsoTwist * 0.5,
     y: Math.min(pose.head.y, shoulderMidY - 0.08),
   };
 
   const leftWeight = pose.knee_l.y < pose.knee_r.y;
+  const sway = Math.sin(phase * Math.PI) * 0.018;
   if (leftWeight) {
-    out.shoulder_l = { x: pose.shoulder_l.x - 0.015, y: pose.shoulder_l.y + 0.01 };
-    out.shoulder_r = { x: pose.shoulder_r.x + 0.02, y: pose.shoulder_r.y };
+    out.shoulder_l = { x: pose.shoulder_l.x - 0.02 + sway, y: pose.shoulder_l.y + 0.012 };
+    out.shoulder_r = { x: pose.shoulder_r.x + 0.025 - sway, y: pose.shoulder_r.y };
+    out.hip_r = { x: pose.hip_r.x + 0.01, y: pose.hip_r.y + 0.008 };
   } else {
-    out.shoulder_r = { x: pose.shoulder_r.x + 0.015, y: pose.shoulder_r.y + 0.01 };
-    out.shoulder_l = { x: pose.shoulder_l.x - 0.02, y: pose.shoulder_l.y };
+    out.shoulder_r = { x: pose.shoulder_r.x + 0.02 - sway, y: pose.shoulder_r.y + 0.012 };
+    out.shoulder_l = { x: pose.shoulder_l.x - 0.025 + sway, y: pose.shoulder_l.y };
+    out.hip_l = { x: pose.hip_l.x - 0.01, y: pose.hip_l.y + 0.008 };
   }
+
+  const armLag = 0.04 * Math.sin(phase * Math.PI * 2);
+  out.wrist_l = { x: pose.wrist_l.x + armLag, y: pose.wrist_l.y + armLag * 0.5 };
+  out.wrist_r = { x: pose.wrist_r.x - armLag, y: pose.wrist_r.y + armLag * 0.5 };
+  out.elbow_l = {
+    x: pose.elbow_l.x + (pose.wrist_l.x - pose.elbow_l.x) * 0.03,
+    y: pose.elbow_l.y,
+  };
+  out.elbow_r = {
+    x: pose.elbow_r.x + (pose.wrist_r.x - pose.elbow_r.x) * 0.03,
+    y: pose.elbow_r.y,
+  };
 
   return out;
 }

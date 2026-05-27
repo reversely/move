@@ -331,6 +331,19 @@ function lerpJoint(a: JointPoint, b: JointPoint, t: number): JointPoint {
   return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
 }
 
+export function lerpJointPoses(
+  a: Record<JointName, JointPoint>,
+  b: Record<JointName, JointPoint>,
+  t: number,
+): Record<JointName, JointPoint> {
+  const result = {} as Record<JointName, JointPoint>;
+  const names = Object.keys(a) as JointName[];
+  for (const name of names) {
+    result[name] = lerpJoint(a[name], b[name], t);
+  }
+  return result;
+}
+
 /** Blend a move toward base by (1 - intensity) so soft beats are subtler. */
 export function applyMoveIntensity(
   move: DanceMove,

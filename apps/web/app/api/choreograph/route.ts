@@ -8,11 +8,13 @@ import {
   parseDancePlan,
   type DancePlan,
 } from "@/lib/dancePlan";
-import { applyMoveIntensity, movesForPhrase, stageForMove } from "@/lib/moveLibrary";
+import { applyMoveIntensity, lerpJointPoses, movesForPhrase, stageForMove } from "@/lib/moveLibrary";
 import { clampStagePhysics } from "@/lib/dancePhysics";
 import { normalizeStage, stageForPhraseFrame } from "@/lib/stageMotion";
-import { pickSequence, sequenceSummaryForPrompt } from "@/lib/tiktokMoves";
+import { choreographySystemPrompt, halfBeatKeyframeInstruction } from "@/lib/choreographyPrompt";
+import { finalizePose } from "@/lib/poseInterpolation";
 import { catalogSummaryForStyle } from "@/lib/tiktokCatalog";
+import { sequenceSummaryForPrompt } from "@/lib/tiktokMoves";
 import type { AudioAnalysis, Choreography, DanceStyle, JointName } from "@/lib/types";
 
 const JOINT_NAMES: JointName[] = [
@@ -31,22 +33,15 @@ const JOINT_NAMES: JointName[] = [
   "ankle_r",
 ];
 
-const FRAME_OFFSETS = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+const FRAME_OFFSETS = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8];
 
-const DANCE_ANALYSIS_SYSTEM = `You are an expert TikTok choreographer who knows viral dances: Renegade, Say So, Savage, Blinding Lights, Lottery, About Damn Time, Unholy, and Griddy.
-Plan 8-count phrases using recognizable moves from these trends. Return only valid JSON.`;
-
-const CHOREOGRAPHY_SYSTEM = `You are a TikTok choreography engine. Create dances using REAL viral move vocabulary:
-Renegade (cross, clap, swipe, woah, dougie), Say So (hip sway, point, body roll), Savage (elbow back, hip tick, hands up),
-Blinding Lights (shimmy, pump, step), Lottery/Griddy (low bounce, hit dem folk).
-
-${sequenceSummaryForPrompt()}
-
-The avatar has 13 joints. Coordinates: center (0,0), head y≈0, ankles y≈1.65-1.75.
-Each keyframe MUST include "stage". Dancer stays UPRIGHT — flip always 0, rotation -25 to 25 max.
-
-Hit accents sharply; soft beats use smaller motion. Arms asymmetric like real TikTok (one arm hits, other relaxed).
+const DANCE_ANALYSIS_SYSTEM = `You are an expert TikTok choreographer who plans dances for a 13-joint stick figure with viral move vocabulary.
+Know: Renegade, Say So, Savage, Blinding Lights, Lottery, About Damn Time, Unholy, Griddy.
+Plan 8-count phrases with DISTINCT move combos, accent_beats on hard hits, and stage travel (walk, turn, jump_land, slide).
+${halfBeatKeyframeInstruction()}
 Return only valid JSON.`;
+
+const CHOREOGRAPHY_SYSTEM = choreographySystemPrompt();
 
 type ChoreographRequest = {
   analysis: AudioAnalysis;
@@ -79,18 +74,24 @@ function buildFallback(
     return {
       beat,
       duration_beats: 8,
-      keyframes: FRAME_OFFSETS.map((offset, frameIndex) => {
-        const onset = onsets[Math.min(frameIndex, onsets.length - 1)] ?? 0.7;
-        const beatNum = offset + 1;
+      keyframes: FRAME_OFFSETS.map((offset) => {
+        const beatIdx = Math.floor(offset);
+        const frac = offset - beatIdx;
+        const onset = onsets[Math.min(beatIdx, onsets.length - 1)] ?? 0.7;
+        const beatNum = beatIdx + 1;
         const isAccent = phrasePlan?.accent_beats?.includes(beatNum) ?? onset > 1;
         const normalizedOnset = isAccent
           ? Math.min(1, Math.max(0.75, onset / 1.4))
           : Math.min(0.85, Math.max(0.45, onset / 2.8));
-        const move = phraseMoves[frameIndex];
+        const moveA = phraseMoves[Math.min(beatIdx, phraseMoves.length - 1)];
+        const moveB = phraseMoves[Math.min(beatIdx + 1, phraseMoves.length - 1)];
+        const poseA = applyMoveIntensity(moveA, normalizedOnset);
+        const poseB = applyMoveIntensity(moveB, normalizedOnset);
+        const joints = finalizePose(frac < 0.01 ? poseA : lerpJointPoses(poseA, poseB, frac));
         return {
           frame_offset: offset,
-          joints: applyMoveIntensity(move, normalizedOnset),
-          stage: stageForMove(style, idx, frameIndex, move),
+          joints,
+          stage: stageForMove(style, idx, beatIdx, moveA),
         };
       }),
     };
@@ -140,6 +141,7 @@ function enrichChoreographyStages(choreography: Choreography): Choreography {
       ...phrase,
       keyframes: phrase.keyframes.map((kf) => ({
         ...kf,
+        joints: finalizePose(kf.joints),
         stage: clampStagePhysics(
           kf.stage ? normalizeStage(kf.stage) : stageForPhraseFrame(phraseIdx, kf.frame_offset),
         ),
@@ -189,7 +191,7 @@ async function generateWithClaude(
     apiKey,
     CHOREOGRAPHY_SYSTEM,
     buildChoreographyFromPlanPrompt(analysis, style, phraseCount, plan),
-    12000,
+    16000,
   );
   if (!text) return null;
   const parsed = safeJsonParse<unknown>(text);

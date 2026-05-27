@@ -37,14 +37,41 @@ function drawLimb(
   b: JointPoint,
   width: number,
   color: string,
+  bend = 0.12,
 ) {
+  const mx = (a.x + b.x) / 2;
+  const my = (a.y + b.y) / 2;
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const cx = mx - (dy / len) * len * bend;
+  const cy = my + (dx / len) * len * bend;
   ctx.strokeStyle = color;
   ctx.lineWidth = width;
   ctx.lineCap = "round";
+  ctx.lineJoin = "round";
   ctx.beginPath();
   ctx.moveTo(a.x, a.y);
-  ctx.lineTo(b.x, b.y);
+  ctx.quadraticCurveTo(cx, cy, b.x, b.y);
   ctx.stroke();
+}
+
+function drawJointCap(
+  ctx: CanvasRenderingContext2D,
+  p: JointPoint,
+  radius: number,
+  fill: string,
+  stroke?: string,
+) {
+  ctx.fillStyle = fill;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+  ctx.fill();
+  if (stroke) {
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
 }
 
 export function drawDetailedAvatar(
@@ -85,9 +112,12 @@ export function drawDetailedAvatar(
     const knee = side === "l" ? points.knee_l : points.knee_r;
     const ankle = side === "l" ? points.ankle_l : points.ankle_r;
     const foot = footTip(ankle, side);
-    drawLimb(ctx, hip, knee, 17, SKIN);
-    drawLimb(ctx, knee, ankle, 14, LIMB);
-    drawLimb(ctx, ankle, foot, 10, LIMB_SHADOW);
+    const legBend = side === "l" ? 0.14 : -0.14;
+    drawLimb(ctx, hip, knee, 18, SKIN, legBend);
+    drawLimb(ctx, knee, ankle, 15, LIMB, legBend * 0.8);
+    drawLimb(ctx, ankle, foot, 10, LIMB_SHADOW, 0.06);
+    drawJointCap(ctx, knee, 9, "#fafafa", BRAND);
+    drawJointCap(ctx, ankle, 8, "#f4f4f5", LIMB_SHADOW);
     ctx.fillStyle = "#d4d4d8";
     ctx.beginPath();
     ctx.ellipse(foot.x, foot.y, 16, 7, 0, 0, Math.PI * 2);
@@ -106,26 +136,23 @@ export function drawDetailedAvatar(
   ctx.closePath();
   ctx.fill();
 
-  drawLimb(ctx, points.hip_l, points.hip_r, 11, LIMB_SHADOW);
-  drawLimb(ctx, neck, shoulderCenter, 12, SKIN);
-  drawLimb(ctx, shoulderCenter, hipCenter, 18, SKIN);
-  drawLimb(ctx, points.shoulder_l, points.shoulder_r, 14, LIMB);
+  drawLimb(ctx, points.hip_l, points.hip_r, 11, LIMB_SHADOW, 0);
+  drawLimb(ctx, neck, shoulderCenter, 13, SKIN, 0.08);
+  drawLimb(ctx, shoulderCenter, hipCenter, 20, SKIN, 0.05);
+  drawLimb(ctx, points.shoulder_l, points.shoulder_r, 15, LIMB, 0);
+  drawJointCap(ctx, neck, 7, SKIN, BRAND);
 
-  const arms: [JointName, JointName, JointName][] = [
-    ["shoulder_l", "elbow_l", "wrist_l"],
-    ["shoulder_r", "elbow_r", "wrist_r"],
+  const arms: [JointName, JointName, JointName, number][] = [
+    ["shoulder_l", "elbow_l", "wrist_l", 0.16],
+    ["shoulder_r", "elbow_r", "wrist_r", -0.16],
   ];
-  for (const [s, e, w] of arms) {
-    drawLimb(ctx, points[s], points[e], 12, SKIN);
-    drawLimb(ctx, points[e], points[w], 10, LIMB);
+  for (const [s, e, w, armBend] of arms) {
+    drawJointCap(ctx, points[s], 10, BRAND);
+    drawLimb(ctx, points[s], points[e], 13, SKIN, armBend);
+    drawLimb(ctx, points[e], points[w], 11, LIMB, armBend * 0.7);
+    drawJointCap(ctx, points[e], 7, "#fafafa", BRAND);
     handFingers(ctx, points[w], points[e]);
-    ctx.fillStyle = SKIN;
-    ctx.beginPath();
-    ctx.arc(points[w].x, points[w].y, 9, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = BRAND;
-    ctx.lineWidth = 2;
-    ctx.stroke();
+    drawJointCap(ctx, points[w], 10, SKIN, BRAND);
   }
 
   const headR = 40;
@@ -168,21 +195,9 @@ export function drawDetailedAvatar(
     ctx.fill();
   }
 
-  const jointSizes: Partial<Record<JointName, number>> = {
-    knee_l: 7,
-    knee_r: 7,
-    ankle_l: 8,
-    ankle_r: 8,
-    elbow_l: 5,
-    elbow_r: 5,
-  };
-  for (const name of Object.keys(points) as JointName[]) {
-    if (name === "head") continue;
-    const p = points[name];
-    const r = jointSizes[name] ?? 4;
-    ctx.fillStyle = name.includes("hip") || name.includes("shoulder") ? BRAND : "#fafafa";
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-    ctx.fill();
+  drawJointCap(ctx, hipCenter, 11, BRAND);
+  for (const side of ["l", "r"] as const) {
+    const hip = side === "l" ? points.hip_l : points.hip_r;
+    drawJointCap(ctx, hip, 6, "rgba(245,124,32,0.85)");
   }
 }

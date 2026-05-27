@@ -1,5 +1,10 @@
 import type { AudioAnalysis, DanceStyle } from "@/lib/types";
 
+import {
+  halfBeatKeyframeInstruction,
+  SKELETON_JOINT_SPEC,
+  TIKTOK_MOTION_QUALITY,
+} from "@/lib/choreographyPrompt";
 import { pickSequence, sequenceSummaryForPrompt } from "@/lib/tiktokMoves";
 import { catalogSummaryForStyle, pickTiktokMovesForPhrase, TIKTOK_MOVE_CATALOG } from "@/lib/tiktokCatalog";
 
@@ -110,7 +115,8 @@ Return ONLY JSON:
     }
   ]
 }
-Plan ${phraseCount} phrases with DIFFERENT move combos and DIFFERENT stage_action per phrase. Build energy toward the end.`;
+Plan ${phraseCount} phrases with DIFFERENT move combos and DIFFERENT stage_action per phrase. Build energy toward the end.
+Each phrase should name 2-4 specific TikTok moves and which beats are accents (sharp hits vs groove).`;
 }
 
 export function buildChoreographyFromPlanPrompt(
@@ -125,36 +131,35 @@ DANCE PLAN:
 ${JSON.stringify(plan, null, 2)}
 
 AUDIO: ${analysis.bpm} BPM, key ${analysis.key}, percussive ${analysis.percussive_ratio}
-Beat strengths: ${JSON.stringify(analysis.onset_per_beat.slice(0, 64))}
+Beat strengths (use high values for sharp accent poses): ${JSON.stringify(analysis.onset_per_beat.slice(0, 64))}
 
 Create ${phraseCount} phrases. Each phrase: beat = index*8+1, duration_beats = 8.
-Keyframes at frame_offset 0, 1, 2, 3, 4, 5, 6, 7, 8 (every beat) for fluid human motion.
+${halfBeatKeyframeInstruction()}
 
-HUMAN BODY RULES (normalized coords, center=0,0, ankles y≈1.65-1.75):
-- head y≈0, shoulders y≈0.18-0.28, hips y≈0.8-0.95, knees y≈1.05-1.35, ankles y≈1.55-1.78
-- elbows bend outward naturally; wrists express TikTok hits
-- one leg weighted (knee bent) while other extends — never stiff T-pose
-- chest/hips counter-shift subtly; head leads or follows per move
-- execute the tiktok_moves named in each phrase plan — use recognizable TikTok choreography
+${SKELETON_JOINT_SPEC}
+
+${TIKTOK_MOTION_QUALITY}
+
+Execute tiktok_moves from each phrase — recognizable viral choreography, not generic waving.
 
 VIRAL TIKTOK REFERENCE (match energy and move names):
 ${sequenceSummaryForPrompt()}
 
-Key moves to include across the routine:
-- Renegade: cross arms → clap under → swipe → woah → dougie
-- Say So: hip sway → diagonal point → body roll
-- Savage: elbow pulls back → hip tick → hands up on drop
+Phrase move arcs (vary every phrase):
+- Renegade: cross → clap under → swipe → woah → dougie (asymmetric arms throughout)
+- Say So: hip sway → diagonal point → body roll (hips lead)
+- Savage: elbow pull back → hip tick → hands up on drop
 - Blinding Lights: shoulder shimmy → fist pump → step touch
 - Lottery/Griddy: low bounce → hit dem folk → griddy footwork
 
 Return ONLY JSON:
-{ "phrases": [{ "beat": number, "duration_beats": 8, "keyframes": [{ "frame_offset": number, "joints": { ...13 joints... }, "stage": { "x", "y", "rotation", "flip", "facing", "head_turn" } }] }] }
+{ "phrases": [{ "beat": number, "duration_beats": 8, "keyframes": [{ "frame_offset": number, "joints": { head, shoulder_l, shoulder_r, elbow_l, elbow_r, wrist_l, wrist_r, hip_l, hip_r, knee_l, knee_r, ankle_l, ankle_r }, "stage": { "x", "y", "rotation", "flip", "facing", "head_turn" } }] }] }
 
 Stage examples:
-- walk_right: x goes -0.6 → 0.6 over 8 beats
-- turn: facing changes, rotation stays between -20 and 20
-- jump_land: y peaks ~0.2 then returns to 0, knees bent in joints on land
-- head_groove: x near 0, head_turn oscillates -0.8 to 0.8`;
+- walk_right: x goes -0.6 → 0.6 over 8 beats, subtle y bounce on steps
+- turn: facing flips mid-phrase, rotation -20 to 20 only
+- jump_land: stage.y peaks ~0.18 at beat 4, knees deep bend in joints on land (frame_offset 4.5+)
+- head_groove: head_turn oscillates -0.85 to 0.85, hips sway opposite shoulders`;
 }
 
 export function parseDancePlan(raw: unknown): DancePlan | null {

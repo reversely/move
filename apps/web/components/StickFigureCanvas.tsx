@@ -3,8 +3,9 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
 
 import { drawDetailedAvatar } from "@/lib/avatarDraw";
+import { BASE_POSE } from "@/lib/basePose";
 import { clampStagePhysics } from "@/lib/dancePhysics";
-import { easeInOutCubic, humanizePose, stabilizePose } from "@/lib/humanPose";
+import { easeInOutQuint, interpolatePoseAtTime } from "@/lib/poseInterpolation";
 import { blendStage, DEFAULT_STAGE } from "@/lib/stageMotion";
 import { applyStageToSkeleton, bodyToCanvasPixels } from "@/lib/stageRender";
 import type { Choreography, JointName, JointPoint, StageTransform } from "@/lib/types";
@@ -40,42 +41,10 @@ const JOINT_ORDER: JointName[] = [
   "ankle_r",
 ];
 
-const DEFAULT_POSE: Record<JointName, JointPoint> = {
-  head: { x: 0, y: 0 },
-  shoulder_l: { x: -0.3, y: 0.2 },
-  shoulder_r: { x: 0.3, y: 0.2 },
-  elbow_l: { x: -0.45, y: 0.45 },
-  elbow_r: { x: 0.45, y: 0.45 },
-  wrist_l: { x: -0.5, y: 0.7 },
-  wrist_r: { x: 0.5, y: 0.7 },
-  hip_l: { x: -0.18, y: 0.82 },
-  hip_r: { x: 0.18, y: 0.82 },
-  knee_l: { x: -0.22, y: 1.18 },
-  knee_r: { x: 0.22, y: 1.18 },
-  ankle_l: { x: -0.26, y: 1.68 },
-  ankle_r: { x: 0.26, y: 1.68 },
-};
-
-function blendPose(
-  a: Record<JointName, JointPoint>,
-  b: Record<JointName, JointPoint>,
-  t: number,
-): Record<JointName, JointPoint> {
-  const eased = easeInOutCubic(t);
-  const result = {} as Record<JointName, JointPoint>;
-  for (const joint of JOINT_ORDER) {
-    result[joint] = {
-      x: a[joint].x + (b[joint].x - a[joint].x) * eased,
-      y: a[joint].y + (b[joint].y - a[joint].y) * eased,
-    };
-  }
-  return stabilizePose(humanizePose(result, eased));
-}
-
 function useTimedPoses(choreography: Choreography | null, bpm: number): { poses: TimedPose[]; duration: number } {
   return useMemo(() => {
     if (!choreography?.phrases?.length || bpm <= 0) {
-      return { poses: [{ t: 0, joints: DEFAULT_POSE, stage: DEFAULT_STAGE }], duration: 8 };
+      return { poses: [{ t: 0, joints: BASE_POSE, stage: DEFAULT_STAGE }], duration: 8 };
     }
 
     const secPerBeat = 60 / bpm;
@@ -94,7 +63,7 @@ function useTimedPoses(choreography: Choreography | null, bpm: number): { poses:
     }
 
     poses.sort((a, b) => a.t - b.t);
-    if (!poses.length) poses.push({ t: 0, joints: DEFAULT_POSE, stage: DEFAULT_STAGE });
+    if (!poses.length) poses.push({ t: 0, joints: BASE_POSE, stage: DEFAULT_STAGE });
     return { poses, duration: maxBeat * secPerBeat };
   }, [choreography, bpm]);
 }
@@ -166,9 +135,9 @@ const StickFigureCanvas = forwardRef<HTMLCanvasElement, Props>(function StickFig
     }
 
     const segment = Math.max(to.t - from.t, 1e-4);
-    const alpha = Math.min(Math.max((danceTime - from.t) / segment, 0), 1);
+    const alpha = easeInOutQuint(Math.min(Math.max((danceTime - from.t) / segment, 0), 1));
     const stage = blendStage(from.stage, to.stage, alpha);
-    const pose = blendPose(from.joints ?? DEFAULT_POSE, to.joints ?? DEFAULT_POSE, alpha);
+    const pose = interpolatePoseAtTime(poses, danceTime, BASE_POSE);
 
     const { width, height } = canvas;
 

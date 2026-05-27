@@ -1,6 +1,6 @@
 import type { StageTransform } from "@/lib/types";
 
-import { easeInOutCubic } from "@/lib/humanPose";
+import { easeInOutQuint } from "@/lib/poseInterpolation";
 import { clampStagePhysics, jumpArcY } from "@/lib/dancePhysics";
 
 export const DEFAULT_STAGE: StageTransform = {
@@ -32,7 +32,7 @@ function lerp(a: number, b: number, t: number): number {
 }
 
 export function blendStage(a: StageTransform, b: StageTransform, t: number): StageTransform {
-  const e = easeInOutCubic(t);
+  const e = easeInOutQuint(t);
   return normalizeStage({
     x: lerp(a.x, b.x, e),
     y: lerp(a.y, b.y, e),
