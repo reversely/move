@@ -1,21 +1,30 @@
-# Team Split
+# Team Split (PRD-Aligned)
 
-## Person 1 - Frontend UI
+## Person 1 - Frontend Product Engineer
 
-- `apps/web/app`
-- `apps/web/components/upload`
-- `apps/web/components/controls`
-- `apps/web/components/timeline`
-- `apps/web/lib/api.ts`
+Owns:
 
-## Person 2 - Backend and Audio
+- `apps/web/app/page.tsx`
+- `apps/web/components/AudioUploader.tsx`
+- `apps/web/components/StyleSelector.tsx`
+- `apps/web/components/ExportButton.tsx`
+- UI states and flows
 
-- `apps/api`
+## Person 2 - Audio + AI Backend Engineer
 
-## Person 3 - Avatar and Dance Core
+Owns:
 
-- `apps/web/components/avatar`
-- `packages/avatar-player`
-- `packages/dance-core`
-- `public/avatars`
-- `public/animations`
+- `apps/api/audio_analyzer.py`
+- `apps/api/main.py`
+- `apps/api/requirements.txt`
+- `apps/web/app/api/choreograph/route.ts`
+- prompt engineering + model response validation
+
+## Person 3 - Animation Renderer Engineer
+
+Owns:
+
+- `apps/web/components/StickFigureCanvas.tsx`
+- keyframe interpolation
+- beat-locked playback behavior
+- renderer quality/performance

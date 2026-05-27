@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "dev:web": "pnpm --filter web dev",
-    "dev:api": "cd apps/api && uvicorn main:app --reload --port 8000",
+    "dev:api": "cd apps/api && uvicorn audio_analyzer:app --reload --port 8000",
     "dev": "concurrently \"pnpm dev:web\" \"pnpm dev:api\""
   },
   "devDependencies": {

@@ -1,0 +1,73 @@
+%% AI Dance Generator — System Architecture (v1)
+%% Source of truth: prd.md
+%% Render in GitHub, Mermaid Live Editor, Obsidian, Notion, or any Mermaid viewer.
+
+flowchart TB
+    classDef user fill:#e8f4fc,stroke:#2563eb,stroke-width:2px,color:#1e3a5f
+    classDef client fill:#f0fdf4,stroke:#16a34a,stroke-width:2px,color:#14532d
+    classDef server fill:#fef9c3,stroke:#ca8a04,stroke-width:2px,color:#713f12
+    classDef audio fill:#fce7f3,stroke:#db2777,stroke-width:2px,color:#831843
+    classDef external fill:#f3e8ff,stroke:#9333ea,stroke-width:2px,color:#581c87
+    classDef artifact fill:#f8fafc,stroke:#64748b,stroke-width:1px,stroke-dasharray:5 5,color:#334155
+
+    subgraph UserLayer["Artist / social manager"]
+        Artist["Browser"]
+    end
+
+    subgraph Browser["Client — browser only (preview + export)"]
+        direction TB
+        UI["Next.js UI<br/><b>/page.tsx</b><br/>upload · style · regenerate · export"]
+        Upload["AudioUploader"]
+        Style["StyleSelector<br/>Hype · Smooth · Quirky"]
+        Canvas["StickFigureCanvas<br/>Canvas 2D · 12-joint skeleton<br/>60fps interpolation · beat sync"]
+        Export["Export pipeline<br/>captureStream(30) → MediaRecorder<br/>ffmpeg.wasm → MP4 1080×1920"]
+    end
+
+    subgraph NextServer["Next.js server (App Router)"]
+        Choreo["<b>/api/choreograph</b><br/>Claude proxy · schema validation<br/>cached system prompt"]
+    end
+
+    subgraph AudioSvc["Audio microservice — FastAPI + librosa"]
+        Analyze["<b>POST /analyze</b><br/>BPM · beat_times · onset_per_beat<br/>percussive_ratio · spectral_bands · key"]
+    end
+
+    subgraph External["External"]
+        Claude["Anthropic Claude<br/><b>claude-sonnet-4-6</b>"]
+    end
+
+    subgraph Artifacts["Data contracts"]
+        direction LR
+        A1["Analyze JSON"]
+        A2["Choreography JSON<br/>phrases · 8-count keyframes"]
+        A3["MP4 vertical<br/>TikTok-ready"]
+    end
+
+    %% User flow (PRD core flow 1–6)
+    Artist -->|"1. Upload MP3/WAV"| UI
+    UI --> Upload
+    UI --> Style
+
+    Upload -->|"2. multipart audio"| Analyze
+    Analyze --> A1
+    A1 -->|"features"| UI
+
+    Style --> UI
+    UI -->|"3. features + style + phrase_count"| Choreo
+    Choreo <-->|"generate / regenerate"| Claude
+    Choreo --> A2
+    A2 -->|"4. keyframes + beat grid + BPM"| Canvas
+
+    UI --> Canvas
+    Canvas -->|"5. preview loop"| Artist
+    UI -->|"optional regenerate"| Choreo
+
+    Canvas --> Export
+    Export --> A3
+    A3 -->|"6. download"| Artist
+
+    class Artist user
+    class UI,Upload,Style,Canvas,Export client
+    class Choreo server
+    class Analyze audio
+    class Claude external
+    class A1,A2,A3 artifact

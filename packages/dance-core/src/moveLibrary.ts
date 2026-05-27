@@ -1,6 +1,4 @@
 export type MoveLibraryEntry = {
-  id: string;
-  label: string;
-  durationBeats: number;
-  animationClip: string;
+  id: "hype" | "smooth" | "quirky";
+  description: string;
 };

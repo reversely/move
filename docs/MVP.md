@@ -1,17 +1,27 @@
-# MVP Scope
+# MVP Scope (Current PRD)
 
 ## Included
 
-- Song upload
-- BPM detection with fallback to 120
-- Dance style and difficulty controls
-- 8-count dance generation
-- Move timeline list
-- Placeholder 3D avatar preview
+- Audio upload (`.mp3` / `.wav`)
+- Python audio analysis microservice (`/analyze`) returning:
+  - bpm
+  - beat times
+  - onset per beat
+  - percussive ratio
+  - spectral bands
+  - key
+  - duration
+- Claude choreography generation via `app/api/choreograph`
+- 2D stick figure renderer (13 joints)
+- Keyframe interpolation and beat-synced playback
+- Style selector (`hype`, `smooth`, `quirky`)
+- Regenerate variation
+- Export flow with MP4 conversion attempt and WebM fallback
 
-## Not Included
+## Explicitly Out of Scope
 
-- Fully generated AI motion
-- TikTok API integration
-- Accounts and billing
-- MP4 export
+- 3D avatars / VRM / realistic humans
+- TikTok posting API integration
+- Reference video ingestion
+- Native mobile app
+- Multi-user account system

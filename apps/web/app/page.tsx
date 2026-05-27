@@ -1,106 +1,153 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
-import AvatarStage from "@/components/avatar/AvatarStage";
-import DanceControls from "@/components/controls/DanceControls";
-import MoveList from "@/components/timeline/MoveList";
-import SongUploader from "@/components/upload/SongUploader";
-import { analyzeSong, generateDance, uploadSong } from "@/lib/api";
-import { DEFAULT_BPM, DEFAULT_TOTAL_BEATS } from "@/lib/constants";
-import type { DanceDifficulty, DancePlan, DanceStyle } from "@/types/dance";
+import AudioUploader from "@/components/AudioUploader";
+import ExportButton from "@/components/ExportButton";
+import StickFigureCanvas from "@/components/StickFigureCanvas";
+import StyleSelector from "@/components/StyleSelector";
+import { analyzeSong, generateChoreography } from "@/lib/api";
+import type { AudioAnalysis, Choreography, DanceStyle } from "@/lib/types";
 
 export default function HomePage() {
-  const [songId, setSongId] = useState<string | null>(null);
+  const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [style, setStyle] = useState<DanceStyle>("fun");
-  const [difficulty, setDifficulty] = useState<DanceDifficulty>("easy");
-  const [dancePlan, setDancePlan] = useState<DancePlan | null>(null);
-  const [detectedBpm, setDetectedBpm] = useState<number>(DEFAULT_BPM);
-  const [isLoading, setIsLoading] = useState(false);
+  const [analysis, setAnalysis] = useState<AudioAnalysis | null>(null);
+  const [style, setStyle] = useState<DanceStyle>("hype");
+  const [choreography, setChoreography] = useState<Choreography | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [audioTime, setAudioTime] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  async function handleUpload(file: File) {
+  async function handleAnalyze(file: File) {
+    setAudioFile(file);
     setError(null);
-    setIsLoading(true);
+    setIsAnalyzing(true);
 
     try {
-      const result = await uploadSong(file);
-      setSongId(result.songId);
-      setAudioUrl(`${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}${result.audioUrl}`);
-
-      const analysis = await analyzeSong(result.songId);
-      setDetectedBpm(analysis.bpm || DEFAULT_BPM);
+      const result = await analyzeSong(file);
+      setAnalysis(result);
+      setAudioUrl(URL.createObjectURL(file));
+      setChoreography(null);
     } catch {
-      setError("Could not upload or analyze song.");
+      setError("Could not analyze this audio file.");
     } finally {
-      setIsLoading(false);
+      setIsAnalyzing(false);
     }
   }
 
   async function handleGenerate() {
-    if (!songId) {
-      setError("Upload a song first.");
+    if (!analysis) {
+      setError("Analyze a song first.");
       return;
     }
-
     setError(null);
-    setIsLoading(true);
-
+    setIsGenerating(true);
     try {
-      const plan = await generateDance({
-        songId,
-        bpm: detectedBpm,
+      const result = await generateChoreography({
+        analysis,
         style,
-        difficulty,
-        totalBeats: DEFAULT_TOTAL_BEATS,
+        phraseCount: 8,
       });
-      setDancePlan(plan);
+      setChoreography(result);
     } catch {
-      setError("Could not generate dance.");
+      setError("Could not generate choreography.");
     } finally {
-      setIsLoading(false);
+      setIsGenerating(false);
     }
   }
 
+  const phraseCount = useMemo(() => choreography?.phrases?.length ?? 0, [choreography]);
+
   return (
-    <main className="min-h-screen bg-neutral-950 p-6 text-white">
-      <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6 lg:grid-cols-[360px_1fr]">
-        <section className="space-y-4 rounded-2xl bg-neutral-900 p-5">
-          <h1 className="text-2xl font-semibold">Dance Generator MVP</h1>
+    <main className="min-h-screen bg-neutral-950 px-6 py-8 text-white">
+      <div className="mx-auto grid max-w-7xl grid-cols-1 gap-6 lg:grid-cols-[360px_1fr]">
+        <section className="space-y-4 rounded-2xl border border-neutral-800 bg-neutral-900/70 p-5">
+          <h1 className="text-2xl font-semibold">AI Dance Generator</h1>
           <p className="text-sm text-neutral-400">
-            Upload a song, choose a vibe, and generate a simple 8 count dance.
+            Upload a song, analyze audio features, generate choreography, and export a TikTok-ready video.
           </p>
 
-          <SongUploader onUpload={handleUpload} />
-
-          <DanceControls
-            style={style}
-            difficulty={difficulty}
-            onStyleChange={setStyle}
-            onDifficultyChange={setDifficulty}
-          />
+          <AudioUploader disabled={isAnalyzing || isGenerating} onSelect={handleAnalyze} />
+          <StyleSelector value={style} onChange={setStyle} disabled={isGenerating} />
 
           <button
+            type="button"
             onClick={handleGenerate}
-            disabled={isLoading}
-            className="w-full rounded-xl bg-white px-4 py-3 font-medium text-black disabled:opacity-60"
+            disabled={isAnalyzing || isGenerating || !analysis}
+            className="w-full rounded-xl bg-white px-4 py-3 font-medium text-black disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isLoading ? "Working..." : "Generate Dance"}
+            {isGenerating ? "Generating..." : "Generate Choreography"}
+          </button>
+          <button
+            type="button"
+            onClick={handleGenerate}
+            disabled={isAnalyzing || isGenerating || !analysis}
+            className="w-full rounded-xl border border-neutral-700 px-4 py-3 font-medium disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isGenerating ? "Generating..." : "Regenerate Variation"}
           </button>
 
-          <p className="text-xs text-neutral-400">Detected BPM: {detectedBpm}</p>
+          <ExportButton canvas={canvasRef.current} disabled={!choreography || isGenerating || isAnalyzing} />
+
+          {analysis && (
+            <div className="space-y-1 rounded-xl border border-neutral-800 bg-neutral-950/40 p-3 text-xs text-neutral-300">
+              <p>BPM: {analysis.bpm.toFixed(2)}</p>
+              <p>Key: {analysis.key}</p>
+              <p>Percussive Ratio: {analysis.percussive_ratio.toFixed(2)}</p>
+              <p>
+                Spectral Bands: bass {analysis.spectral_bands.bass.toFixed(2)}, mid {analysis.spectral_bands.mid.toFixed(2)},
+                treble {analysis.spectral_bands.treble.toFixed(2)}
+              </p>
+              <p>Duration: {analysis.duration_seconds.toFixed(1)}s</p>
+            </div>
+          )}
+
+          {audioFile && <p className="text-xs text-neutral-500">Loaded: {audioFile.name}</p>}
           {error && <p className="text-sm text-red-400">{error}</p>}
-          {audioUrl && <audio className="w-full" controls src={audioUrl} />}
         </section>
 
-        <section className="space-y-4">
-          <div className="rounded-2xl bg-neutral-900 p-4">
-            <AvatarStage dancePlan={dancePlan} />
+        <section className="space-y-4 rounded-2xl border border-neutral-800 bg-neutral-900/70 p-5">
+          <div className="flex flex-col items-center gap-4 lg:flex-row lg:items-start">
+            <StickFigureCanvas
+              ref={canvasRef}
+              choreography={choreography}
+              bpm={analysis?.bpm ?? 120}
+              audioTime={audioTime}
+              isPlaying={isPlaying}
+            />
+            <div className="w-full space-y-3">
+              <h2 className="text-lg font-semibold">Preview</h2>
+              <p className="text-sm text-neutral-400">
+                1080x1920 stick-figure render with keyframe interpolation and beat-locked timing.
+              </p>
+              {audioUrl && (
+                <audio
+                  ref={audioRef}
+                  className="w-full"
+                  controls
+                  src={audioUrl}
+                  onPlay={() => setIsPlaying(true)}
+                  onPause={() => setIsPlaying(false)}
+                  onEnded={() => setIsPlaying(false)}
+                  onTimeUpdate={(event) => setAudioTime(event.currentTarget.currentTime)}
+                />
+              )}
+              <div className="rounded-xl border border-neutral-800 bg-neutral-950/40 p-3 text-xs text-neutral-300">
+                <p>Style: {style}</p>
+                <p>Phrases: {phraseCount}</p>
+                <p>Audio time: {audioTime.toFixed(2)}s</p>
+                <p>Status: {isPlaying ? "Playing" : "Paused"}</p>
+              </div>
+            </div>
           </div>
-
-          <div className="rounded-2xl bg-neutral-900 p-4">
-            <MoveList dancePlan={dancePlan} />
+          <div className="rounded-xl border border-neutral-800 bg-neutral-950/40 p-3 text-xs text-neutral-300">
+            <p className="font-medium">Workflow</p>
+            <p>1) Upload 2) Analyze 3) Generate 4) Preview 5) Export MP4</p>
           </div>
         </section>
       </div>

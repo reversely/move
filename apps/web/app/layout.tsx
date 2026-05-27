@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "TikTok Dance Generator MVP",
-  description: "Generate a short dance plan from an uploaded song.",
+  title: "AI Dance Generator",
+  description: "Generate AI-choreographed stick figure dance previews from uploaded songs.",
 };
 
 export default function RootLayout({

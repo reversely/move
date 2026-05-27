@@ -1,47 +1,30 @@
-import type { DanceDifficulty, DancePlan, DanceStyle, SongAnalysis } from "@/types/dance";
+import type { AudioAnalysis, Choreography, DanceStyle } from "@/lib/types";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const ANALYZER_URL = process.env.NEXT_PUBLIC_ANALYZER_URL ?? "http://127.0.0.1:8000";
 
-export async function uploadSong(file: File): Promise<{ songId: string; audioUrl: string }> {
+export async function analyzeSong(file: File): Promise<AudioAnalysis> {
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await fetch(`${API_BASE_URL}/songs/upload`, {
+  const response = await fetch(`${ANALYZER_URL}/analyze`, {
     method: "POST",
     body: formData,
   });
 
   if (!response.ok) {
-    throw new Error("Failed to upload song");
+    const detail = await response.text();
+    throw new Error(`Audio analysis failed: ${detail}`);
   }
 
   return response.json();
 }
 
-export async function analyzeSong(songId: string): Promise<SongAnalysis> {
-  const response = await fetch(`${API_BASE_URL}/songs/analyze`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ songId }),
-  });
-
-  if (!response.ok) {
-    throw new Error("Failed to analyze song");
-  }
-
-  return response.json();
-}
-
-export async function generateDance(input: {
-  songId: string;
-  bpm: number;
+export async function generateChoreography(input: {
+  analysis: AudioAnalysis;
   style: DanceStyle;
-  difficulty: DanceDifficulty;
-  totalBeats: number;
-}): Promise<DancePlan> {
-  const response = await fetch(`${API_BASE_URL}/dances/generate`, {
+  phraseCount: number;
+}): Promise<Choreography> {
+  const response = await fetch("/api/choreograph", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -50,7 +33,8 @@ export async function generateDance(input: {
   });
 
   if (!response.ok) {
-    throw new Error("Failed to generate dance");
+    const detail = await response.text();
+    throw new Error(`Choreography generation failed: ${detail}`);
   }
 
   return response.json();

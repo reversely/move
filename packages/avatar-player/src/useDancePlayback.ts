@@ -1,3 +1,6 @@
 export function useDancePlayback() {
-  return null;
+  return {
+    currentPhrase: 0,
+    isPlaying: false,
+  };
 }

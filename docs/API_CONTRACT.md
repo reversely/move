@@ -1,23 +1,76 @@
-# API Contract
+# API Contract (PRD)
 
-## Health
+## Audio Analyzer Service (`apps/api`)
 
-- `GET /health`
-- Response: `{ "ok": true }`
+### `GET /health`
 
-## Upload Song
+Response:
 
-- `POST /songs/upload` with `multipart/form-data` field `file`
-- Response: `{ "songId": "...", "fileName": "...", "audioUrl": "/uploads/..." }`
+```json
+{ "ok": true }
+```
 
-## Analyze Song
+### `POST /analyze`
 
-- `POST /songs/analyze`
-- Body: `{ "songId": "song_abc123" }`
-- Response: `{ "songId": "...", "bpm": 120, "durationSeconds": 30, "beats": [0, 0.5] }`
+Request: `multipart/form-data` with `file`
 
-## Generate Dance
+Response:
 
-- `POST /dances/generate`
-- Body: `{ "songId": "...", "bpm": 120, "style": "fun", "difficulty": "easy", "totalBeats": 8 }`
-- Response: `DancePlan`
+```json
+{
+  "bpm": 127.8,
+  "beat_times": [0.23, 0.7, 1.17],
+  "onset_per_beat": [0.4, 1.2, 0.3],
+  "percussive_ratio": 0.71,
+  "spectral_bands": {
+    "bass": 0.52,
+    "mid": 0.33,
+    "treble": 0.15
+  },
+  "key": "F#",
+  "duration_seconds": 187.4
+}
+```
+
+## Choreography Route (`apps/web`)
+
+### `POST /api/choreograph`
+
+Request:
+
+```json
+{
+  "analysis": {
+    "bpm": 127.8,
+    "beat_times": [0.23, 0.7, 1.17],
+    "onset_per_beat": [0.4, 1.2, 0.3],
+    "percussive_ratio": 0.71,
+    "spectral_bands": { "bass": 0.52, "mid": 0.33, "treble": 0.15 },
+    "key": "F#",
+    "duration_seconds": 187.4
+  },
+  "style": "hype",
+  "phraseCount": 8
+}
+```
+
+Response:
+
+```json
+{
+  "phrases": [
+    {
+      "beat": 1,
+      "duration_beats": 8,
+      "keyframes": [
+        {
+          "frame_offset": 0,
+          "joints": {
+            "head": { "x": 0, "y": 0 }
+          }
+        }
+      ]
+    }
+  ]
+}
+```

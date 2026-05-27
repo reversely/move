@@ -8,20 +8,16 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@pixiv/three-vrm": "latest",
-    "@react-three/drei": "latest",
-    "@react-three/fiber": "latest",
+    "@ffmpeg/ffmpeg": "latest",
+    "@ffmpeg/util": "latest",
     "next": "latest",
     "react": "latest",
-    "react-dom": "latest",
-    "three": "latest",
-    "tone": "latest"
+    "react-dom": "latest"
   },
   "devDependencies": {
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
-    "@types/three": "latest",
     "tailwindcss": "latest",
     "typescript": "latest"
   }
