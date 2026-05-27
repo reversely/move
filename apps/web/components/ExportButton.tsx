@@ -73,7 +73,6 @@ export default function ExportButton({ canvas, disabled, durationMs = 12000 }: P
         const mp4Blob = new Blob([mp4Bytes], { type: "video/mp4" });
         downloadBlob(mp4Blob, "dance-preview.mp4");
       } catch {
-        // Fallback keeps export functional even if wasm conversion fails on a browser/runtime.
         downloadBlob(webmBlob, "dance-preview.webm");
       }
     } finally {
@@ -86,9 +85,12 @@ export default function ExportButton({ canvas, disabled, durationMs = 12000 }: P
       type="button"
       onClick={handleExport}
       disabled={disabled || isExporting || !canvas}
-      className="w-full rounded-xl bg-fuchsia-500 px-4 py-3 font-medium text-black disabled:cursor-not-allowed disabled:opacity-50"
+      className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-[var(--color-border-strong)] bg-transparent px-4 py-3 text-sm font-semibold text-[var(--color-text)] transition-colors hover:border-[var(--color-brand)] hover:bg-[var(--color-brand-muted)] hover:text-[var(--color-brand-hover)] disabled:cursor-not-allowed disabled:opacity-40"
     >
-      {isExporting ? "Exporting..." : "Export MP4"}
+      <svg className="h-4 w-4 text-[var(--color-brand)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+      </svg>
+      {isExporting ? "Exporting video…" : "Export for TikTok"}
     </button>
   );
 }

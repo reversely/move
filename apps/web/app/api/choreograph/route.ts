@@ -1,6 +1,19 @@
 import { NextResponse } from "next/server";
 
-import type { AudioAnalysis, Choreography, DanceStyle, JointName, JointPoint } from "@/lib/types";
+import { callClaude, safeJsonParse } from "@/lib/claudeClient";
+import {
+  buildChoreographyFromPlanPrompt,
+  buildDanceAnalysisPrompt,
+  buildLocalDancePlan,
+  parseDancePlan,
+  type DancePlan,
+} from "@/lib/dancePlan";
+import { applyMoveIntensity, movesForPhrase, stageForMove } from "@/lib/moveLibrary";
+import { clampStagePhysics } from "@/lib/dancePhysics";
+import { normalizeStage, stageForPhraseFrame } from "@/lib/stageMotion";
+import { pickSequence, sequenceSummaryForPrompt } from "@/lib/tiktokMoves";
+import { catalogSummaryForStyle } from "@/lib/tiktokCatalog";
+import type { AudioAnalysis, Choreography, DanceStyle, JointName } from "@/lib/types";
 
 const JOINT_NAMES: JointName[] = [
   "head",
@@ -18,21 +31,22 @@ const JOINT_NAMES: JointName[] = [
   "ankle_r",
 ];
 
-const BASE_POSE: Record<JointName, JointPoint> = {
-  head: { x: 0, y: 0 },
-  shoulder_l: { x: -0.3, y: 0.2 },
-  shoulder_r: { x: 0.3, y: 0.2 },
-  elbow_l: { x: -0.45, y: 0.45 },
-  elbow_r: { x: 0.45, y: 0.45 },
-  wrist_l: { x: -0.5, y: 0.7 },
-  wrist_r: { x: 0.5, y: 0.7 },
-  hip_l: { x: -0.16, y: 0.82 },
-  hip_r: { x: 0.16, y: 0.82 },
-  knee_l: { x: -0.18, y: 1.25 },
-  knee_r: { x: 0.18, y: 1.25 },
-  ankle_l: { x: -0.2, y: 1.72 },
-  ankle_r: { x: 0.2, y: 1.72 },
-};
+const FRAME_OFFSETS = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+
+const DANCE_ANALYSIS_SYSTEM = `You are an expert TikTok choreographer who knows viral dances: Renegade, Say So, Savage, Blinding Lights, Lottery, About Damn Time, Unholy, and Griddy.
+Plan 8-count phrases using recognizable moves from these trends. Return only valid JSON.`;
+
+const CHOREOGRAPHY_SYSTEM = `You are a TikTok choreography engine. Create dances using REAL viral move vocabulary:
+Renegade (cross, clap, swipe, woah, dougie), Say So (hip sway, point, body roll), Savage (elbow back, hip tick, hands up),
+Blinding Lights (shimmy, pump, step), Lottery/Griddy (low bounce, hit dem folk).
+
+${sequenceSummaryForPrompt()}
+
+The avatar has 13 joints. Coordinates: center (0,0), head y≈0, ankles y≈1.65-1.75.
+Each keyframe MUST include "stage". Dancer stays UPRIGHT — flip always 0, rotation -25 to 25 max.
+
+Hit accents sharply; soft beats use smaller motion. Arms asymmetric like real TikTok (one arm hits, other relaxed).
+Return only valid JSON.`;
 
 type ChoreographRequest = {
   analysis: AudioAnalysis;
@@ -40,48 +54,44 @@ type ChoreographRequest = {
   phraseCount: number;
 };
 
-function safeJsonParse<T>(raw: string): T | null {
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    const start = raw.indexOf("{");
-    const end = raw.lastIndexOf("}");
-    if (start >= 0 && end > start) {
-      try {
-        return JSON.parse(raw.slice(start, end + 1)) as T;
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  }
-}
-
-function buildFallback(analysis: AudioAnalysis, style: DanceStyle, phraseCount: number): Choreography {
-  const ampBase = style === "hype" ? 0.26 : style === "quirky" ? 0.22 : 0.14;
+function buildFallback(
+  analysis: AudioAnalysis,
+  style: DanceStyle,
+  phraseCount: number,
+  plan: DancePlan,
+): Choreography {
   const phrases = Array.from({ length: phraseCount }, (_, idx) => {
     const beat = idx * 8 + 1;
     const onsets = Array.from({ length: 8 }, (_, beatIdx) => {
-      const source = analysis.onset_per_beat.length ? analysis.onset_per_beat[(idx * 8 + beatIdx) % analysis.onset_per_beat.length] : 0.7;
+      const source = analysis.onset_per_beat.length
+        ? analysis.onset_per_beat[(idx * 8 + beatIdx) % analysis.onset_per_beat.length]
+        : 0.7;
       return source;
     });
-    const intensity = onsets.length ? Math.max(...onsets, 0.7) / 2 : 0.7;
-    const amp = ampBase + intensity * 0.12;
+    const phrasePlan = plan.phrases[idx];
+    const phraseMoves = movesForPhrase(
+      style,
+      idx,
+      onsets,
+      phrasePlan?.tiktok_moves,
+    );
+
     return {
       beat,
       duration_beats: 8,
-      keyframes: [0, 2, 4, 6, 8].map((offset, frameIndex) => {
-        const dir = frameIndex % 2 === 0 ? 1 : -1;
-        const hips = analysis.spectral_bands.bass > 0.45 ? 0.07 : 0.04;
-        const wrists = analysis.spectral_bands.treble > 0.2 ? 0.09 : 0.05;
-        const pose: Record<JointName, JointPoint> = { ...BASE_POSE };
-        pose.shoulder_l = { x: BASE_POSE.shoulder_l.x - amp * dir, y: BASE_POSE.shoulder_l.y };
-        pose.shoulder_r = { x: BASE_POSE.shoulder_r.x - amp * dir, y: BASE_POSE.shoulder_r.y };
-        pose.wrist_l = { x: BASE_POSE.wrist_l.x - (amp + wrists) * dir, y: BASE_POSE.wrist_l.y - 0.07 * dir };
-        pose.wrist_r = { x: BASE_POSE.wrist_r.x - (amp + wrists) * dir, y: BASE_POSE.wrist_r.y + 0.07 * dir };
-        pose.hip_l = { x: BASE_POSE.hip_l.x + hips * dir, y: BASE_POSE.hip_l.y + 0.03 * dir };
-        pose.hip_r = { x: BASE_POSE.hip_r.x + hips * dir, y: BASE_POSE.hip_r.y - 0.03 * dir };
-        return { frame_offset: offset, joints: pose };
+      keyframes: FRAME_OFFSETS.map((offset, frameIndex) => {
+        const onset = onsets[Math.min(frameIndex, onsets.length - 1)] ?? 0.7;
+        const beatNum = offset + 1;
+        const isAccent = phrasePlan?.accent_beats?.includes(beatNum) ?? onset > 1;
+        const normalizedOnset = isAccent
+          ? Math.min(1, Math.max(0.75, onset / 1.4))
+          : Math.min(0.85, Math.max(0.45, onset / 2.8));
+        const move = phraseMoves[frameIndex];
+        return {
+          frame_offset: offset,
+          joints: applyMoveIntensity(move, normalizedOnset),
+          stage: stageForMove(style, idx, frameIndex, move),
+        };
       }),
     };
   });
@@ -95,43 +105,96 @@ function validateChoreography(value: unknown): value is Choreography {
   return phrases.every((phrase) => {
     if (!phrase || typeof phrase !== "object") return false;
     const p = phrase as { beat?: unknown; duration_beats?: unknown; keyframes?: unknown };
-    if (typeof p.beat !== "number" || typeof p.duration_beats !== "number" || !Array.isArray(p.keyframes)) return false;
+    if (typeof p.beat !== "number" || typeof p.duration_beats !== "number" || !Array.isArray(p.keyframes)) {
+      return false;
+    }
     return p.keyframes.every((k) => {
       if (!k || typeof k !== "object") return false;
-      const frame = k as { frame_offset?: unknown; joints?: unknown };
-      if (typeof frame.frame_offset !== "number" || !frame.joints || typeof frame.joints !== "object") return false;
-      return JOINT_NAMES.every((name) => {
+      const frame = k as { frame_offset?: unknown; joints?: unknown; stage?: unknown };
+      if (typeof frame.frame_offset !== "number" || !frame.joints || typeof frame.joints !== "object") {
+        return false;
+      }
+      const jointsOk = JOINT_NAMES.every((name) => {
         const point = (frame.joints as Record<string, unknown>)[name] as { x?: unknown; y?: unknown } | undefined;
         return point && typeof point.x === "number" && typeof point.y === "number";
       });
+      if (!jointsOk) return false;
+      if (frame.stage === undefined) return true;
+      const s = frame.stage as Record<string, unknown>;
+      return (
+        typeof s.x === "number" &&
+        typeof s.y === "number" &&
+        typeof s.rotation === "number" &&
+        typeof s.flip === "number" &&
+        typeof s.facing === "number" &&
+        typeof s.head_turn === "number"
+      );
     });
   });
 }
 
-function buildUserPrompt(input: ChoreographRequest) {
-  const { analysis, style, phraseCount } = input;
-  const sharp = analysis.percussive_ratio > 0.6 ? "sharp, hitting movements" : "smooth, flowing movements";
-  const bassHint = analysis.spectral_bands.bass > 0.45 ? "emphasize hip and low-body movement" : "";
-  const trebleHint = analysis.spectral_bands.treble > 0.2 ? "add wrist and finger detail" : "";
-  return `
-Generate choreography for a song in the key of ${analysis.key}.
-BPM: ${analysis.bpm}. Style: ${style}.
-
-Audio characteristics:
-- Percussive intensity: ${analysis.percussive_ratio}/1.0 - ${sharp}
-- Bass dominance: ${analysis.spectral_bands.bass} - ${bassHint}
-- Treble presence: ${analysis.spectral_bands.treble} - ${trebleHint}
-- Beat strength per beat (0=soft, 2=hard hit): ${JSON.stringify(analysis.onset_per_beat.slice(0, 64))}
-  Use high-onset beats for arm pops or weight shifts; low-onset beats for holds or transitions.
-
-Create ${phraseCount} 8-count phrases that build in energy across the sequence.
-Phrases 1-2: establish the groove. Phrases 3-6: develop. Phrases 7-8: peak energy.
-
-Return only JSON in this exact schema:
-{
-  "phrases": [{ "beat": number, "duration_beats": number, "keyframes": [{ "frame_offset": number, "joints": { ...13 joints... } }] }]
+function enrichChoreographyStages(choreography: Choreography): Choreography {
+  return {
+    ...choreography,
+    phrases: choreography.phrases.map((phrase, phraseIdx) => ({
+      ...phrase,
+      keyframes: phrase.keyframes.map((kf) => ({
+        ...kf,
+        stage: clampStagePhysics(
+          kf.stage ? normalizeStage(kf.stage) : stageForPhraseFrame(phraseIdx, kf.frame_offset),
+        ),
+      })),
+    })),
+  };
 }
-`;
+
+async function analyzeWithClaude(
+  apiKey: string,
+  analysis: AudioAnalysis,
+  style: DanceStyle,
+  phraseCount: number,
+): Promise<DancePlan> {
+  const text = await callClaude(
+    apiKey,
+    DANCE_ANALYSIS_SYSTEM,
+    buildDanceAnalysisPrompt(analysis, style, phraseCount),
+    2000,
+  );
+  if (!text) return buildLocalDancePlan(analysis, style, phraseCount);
+  const parsed = parseDancePlan(safeJsonParse<unknown>(text));
+  if (!parsed || parsed.phrases.length < phraseCount) {
+    const local = buildLocalDancePlan(analysis, style, phraseCount);
+    if (parsed?.phrases?.length) {
+      return {
+        ...local,
+        vibe: parsed.vibe || local.vibe,
+        tiktok_style: parsed.tiktok_style || local.tiktok_style,
+        human_notes: parsed.human_notes || local.human_notes,
+        phrases: local.phrases.map((ph, i) => parsed.phrases[i] ?? ph),
+      };
+    }
+    return local;
+  }
+  return parsed;
+}
+
+async function generateWithClaude(
+  apiKey: string,
+  analysis: AudioAnalysis,
+  style: DanceStyle,
+  phraseCount: number,
+  plan: DancePlan,
+): Promise<Choreography | null> {
+  const text = await callClaude(
+    apiKey,
+    CHOREOGRAPHY_SYSTEM,
+    buildChoreographyFromPlanPrompt(analysis, style, phraseCount, plan),
+    12000,
+  );
+  if (!text) return null;
+  const parsed = safeJsonParse<unknown>(text);
+  if (!parsed || !validateChoreography(parsed)) return null;
+  return enrichChoreographyStages(parsed);
 }
 
 export async function POST(req: Request) {
@@ -142,51 +205,35 @@ export async function POST(req: Request) {
 
   const phraseCount = Math.min(Math.max(body.phraseCount || 8, 1), 12);
   const apiKey = process.env.ANTHROPIC_API_KEY;
+
+  const plan = apiKey
+    ? await analyzeWithClaude(apiKey, body.analysis, body.style, phraseCount)
+    : buildLocalDancePlan(body.analysis, body.style, phraseCount);
+
   if (!apiKey) {
-    return NextResponse.json(buildFallback(body.analysis, body.style, phraseCount));
+    return NextResponse.json(buildFallback(body.analysis, body.style, phraseCount, plan));
   }
 
-  const systemPrompt = `You are a choreography engine. Generate dance move sequences for a stick figure avatar.
-The stick figure has 13 joints. Coordinates are normalized: center body = (0,0),
-full height span = 2.0 units. Return only valid JSON matching the provided schema.
-Movements should feel rhythmic, expressive, and loop cleanly across 8-count phrases.
+  const choreography = await generateWithClaude(
+    apiKey,
+    body.analysis,
+    body.style,
+    phraseCount,
+    plan,
+  );
 
-Style definitions:
-- hype: large arm movements, weight shifts, high energy, hits on every beat
-- smooth: fluid transitions, minimal holds, wave-like arm motion, hip sways
-- quirky: unexpected directional changes, asymmetric poses, pauses between beats`;
-
-  try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
+  if (choreography) {
+    return NextResponse.json({
+      ...choreography,
+      meta: {
+        vibe: plan.vibe,
+        tiktok_style: plan.tiktok_style,
+        human_notes: plan.human_notes,
+        move_catalog: catalogSummaryForStyle(body.style),
+        viral_sequences: sequenceSummaryForPrompt(),
       },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 4000,
-        system: systemPrompt,
-        messages: [{ role: "user", content: buildUserPrompt({ ...body, phraseCount }) }],
-      }),
     });
-
-    if (!res.ok) {
-      const detail = await res.text();
-      return NextResponse.json({ error: `Claude API failed: ${detail}` }, { status: 502 });
-    }
-
-    const payload = (await res.json()) as {
-      content?: Array<{ type: string; text?: string }>;
-    };
-    const text = payload.content?.find((part) => part.type === "text")?.text ?? "";
-    const parsed = safeJsonParse<unknown>(text);
-    if (!parsed || !validateChoreography(parsed)) {
-      return NextResponse.json(buildFallback(body.analysis, body.style, phraseCount));
-    }
-    return NextResponse.json(parsed);
-  } catch {
-    return NextResponse.json(buildFallback(body.analysis, body.style, phraseCount));
   }
+
+  return NextResponse.json(buildFallback(body.analysis, body.style, phraseCount, plan));
 }

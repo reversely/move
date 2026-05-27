@@ -12,6 +12,9 @@ export type AudioAnalysis = {
   };
   key: string;
   duration_seconds: number;
+  clip_start_seconds: number;
+  clip_end_seconds: number;
+  source_duration_seconds: number;
 };
 
 export type JointPoint = {

@@ -1,19 +1,27 @@
 "use client";
 
-import { forwardRef, useEffect, useMemo, useRef } from "react";
+import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
 
-import type { Choreography, JointName, JointPoint } from "@/lib/types";
+import { drawDetailedAvatar } from "@/lib/avatarDraw";
+import { clampStagePhysics } from "@/lib/dancePhysics";
+import { easeInOutCubic, humanizePose, stabilizePose } from "@/lib/humanPose";
+import { blendStage, DEFAULT_STAGE } from "@/lib/stageMotion";
+import { applyStageToSkeleton, bodyToCanvasPixels } from "@/lib/stageRender";
+import type { Choreography, JointName, JointPoint, StageTransform } from "@/lib/types";
 
 type Props = {
   choreography: Choreography | null;
   bpm: number;
-  audioTime: number;
-  isPlaying: boolean;
+  playbackTime: number;
+  clipDuration?: number;
+  isPlaying?: boolean;
+  hasAnalysis?: boolean;
 };
 
 type TimedPose = {
   t: number;
   joints: Record<JointName, JointPoint>;
+  stage: StageTransform;
 };
 
 const JOINT_ORDER: JointName[] = [
@@ -32,72 +40,42 @@ const JOINT_ORDER: JointName[] = [
   "ankle_r",
 ];
 
-const LIMBS: [JointName, JointName][] = [
-  ["shoulder_l", "shoulder_r"],
-  ["shoulder_l", "elbow_l"],
-  ["elbow_l", "wrist_l"],
-  ["shoulder_r", "elbow_r"],
-  ["elbow_r", "wrist_r"],
-  ["hip_l", "hip_r"],
-  ["hip_l", "knee_l"],
-  ["knee_l", "ankle_l"],
-  ["hip_r", "knee_r"],
-  ["knee_r", "ankle_r"],
-];
-
 const DEFAULT_POSE: Record<JointName, JointPoint> = {
   head: { x: 0, y: 0 },
-  shoulder_l: { x: -0.28, y: 0.24 },
-  shoulder_r: { x: 0.28, y: 0.24 },
-  elbow_l: { x: -0.42, y: 0.5 },
-  elbow_r: { x: 0.42, y: 0.5 },
-  wrist_l: { x: -0.42, y: 0.78 },
-  wrist_r: { x: 0.42, y: 0.78 },
-  hip_l: { x: -0.14, y: 0.84 },
-  hip_r: { x: 0.14, y: 0.84 },
-  knee_l: { x: -0.14, y: 1.27 },
-  knee_r: { x: 0.14, y: 1.27 },
-  ankle_l: { x: -0.14, y: 1.7 },
-  ankle_r: { x: 0.14, y: 1.7 },
+  shoulder_l: { x: -0.3, y: 0.2 },
+  shoulder_r: { x: 0.3, y: 0.2 },
+  elbow_l: { x: -0.45, y: 0.45 },
+  elbow_r: { x: 0.45, y: 0.45 },
+  wrist_l: { x: -0.5, y: 0.7 },
+  wrist_r: { x: 0.5, y: 0.7 },
+  hip_l: { x: -0.18, y: 0.82 },
+  hip_r: { x: 0.18, y: 0.82 },
+  knee_l: { x: -0.22, y: 1.18 },
+  knee_r: { x: 0.22, y: 1.18 },
+  ankle_l: { x: -0.26, y: 1.68 },
+  ankle_r: { x: 0.26, y: 1.68 },
 };
-
-function lerp(a: number, b: number, t: number): number {
-  return a + (b - a) * t;
-}
 
 function blendPose(
   a: Record<JointName, JointPoint>,
   b: Record<JointName, JointPoint>,
   t: number,
 ): Record<JointName, JointPoint> {
+  const eased = easeInOutCubic(t);
   const result = {} as Record<JointName, JointPoint>;
   for (const joint of JOINT_ORDER) {
     result[joint] = {
-      x: lerp(a[joint].x, b[joint].x, t),
-      y: lerp(a[joint].y, b[joint].y, t),
+      x: a[joint].x + (b[joint].x - a[joint].x) * eased,
+      y: a[joint].y + (b[joint].y - a[joint].y) * eased,
     };
   }
-  return result;
-}
-
-function toPixels(point: JointPoint, width: number, height: number): JointPoint {
-  return {
-    x: width * (0.5 + point.x * 0.23),
-    y: height * (0.12 + (point.y / 2) * 0.76),
-  };
-}
-
-function midpoint(a: JointPoint, b: JointPoint): JointPoint {
-  return {
-    x: (a.x + b.x) / 2,
-    y: (a.y + b.y) / 2,
-  };
+  return stabilizePose(humanizePose(result, eased));
 }
 
 function useTimedPoses(choreography: Choreography | null, bpm: number): { poses: TimedPose[]; duration: number } {
   return useMemo(() => {
     if (!choreography?.phrases?.length || bpm <= 0) {
-      return { poses: [{ t: 0, joints: DEFAULT_POSE }], duration: 8 };
+      return { poses: [{ t: 0, joints: DEFAULT_POSE, stage: DEFAULT_STAGE }], duration: 8 };
     }
 
     const secPerBeat = 60 / bpm;
@@ -110,23 +88,60 @@ function useTimedPoses(choreography: Choreography | null, bpm: number): { poses:
         poses.push({
           t: Math.max(0, (phrase.beat - 1 + keyframe.frame_offset) * secPerBeat),
           joints: keyframe.joints,
+          stage: clampStagePhysics(keyframe.stage ?? DEFAULT_STAGE),
         });
       }
     }
 
     poses.sort((a, b) => a.t - b.t);
-    if (!poses.length) poses.push({ t: 0, joints: DEFAULT_POSE });
+    if (!poses.length) poses.push({ t: 0, joints: DEFAULT_POSE, stage: DEFAULT_STAGE });
     return { poses, duration: maxBeat * secPerBeat };
   }, [choreography, bpm]);
 }
 
+function drawStageFloor(ctx: CanvasRenderingContext2D, width: number, height: number) {
+  const floorY = height * 0.9;
+  ctx.strokeStyle = "rgba(255,255,255,0.05)";
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 5; i += 1) {
+    const x = width * (0.15 + i * 0.175);
+    ctx.beginPath();
+    ctx.moveTo(x, floorY - 40);
+    ctx.lineTo(x, floorY);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = "rgba(245,124,32,0.2)";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(width * 0.1, floorY);
+  ctx.lineTo(width * 0.9, floorY);
+  ctx.stroke();
+}
+
 const StickFigureCanvas = forwardRef<HTMLCanvasElement, Props>(function StickFigureCanvas(
-  { choreography, bpm, audioTime, isPlaying },
+  { choreography, bpm, playbackTime, clipDuration, isPlaying = false, hasAnalysis },
   forwardedRef,
 ) {
   const internalRef = useRef<HTMLCanvasElement | null>(null);
   const { poses, duration } = useTimedPoses(choreography, bpm);
-  const loopTime = duration > 0 ? audioTime % duration : 0;
+  const maxDanceTime =
+    clipDuration != null && clipDuration > 0
+      ? Math.min(duration, clipDuration)
+      : duration;
+  const danceTime =
+    maxDanceTime > 0 ? Math.min(Math.max(0, playbackTime), maxDanceTime - 1e-4) : 0;
+  const [frame, setFrame] = useState(0);
+
+  useEffect(() => {
+    if (!isPlaying || !choreography) return;
+    let raf = 0;
+    const tick = () => {
+      setFrame((n) => n + 1);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [isPlaying, choreography]);
 
   useEffect(() => {
     const canvas = internalRef.current;
@@ -135,117 +150,72 @@ const StickFigureCanvas = forwardRef<HTMLCanvasElement, Props>(function StickFig
     if (!ctx) return;
 
     let from = poses[0];
-    let to = poses[0];
-    for (let i = 0; i < poses.length; i += 1) {
+    let to = poses.length > 1 ? poses[1] : poses[0];
+    for (let i = 0; i < poses.length - 1; i += 1) {
       const current = poses[i];
-      const next = poses[Math.min(i + 1, poses.length - 1)];
-      if (loopTime >= current.t && loopTime <= next.t) {
+      const next = poses[i + 1];
+      if (danceTime >= current.t && danceTime < next.t) {
         from = current;
         to = next;
         break;
       }
-      if (loopTime >= poses[poses.length - 1].t) {
-        from = poses[poses.length - 1];
-        to = poses[0];
+      if (i === poses.length - 2 && danceTime >= next.t) {
+        from = next;
+        to = next;
       }
     }
 
-    const segment = Math.max((to.t >= from.t ? to.t - from.t : duration - from.t + to.t), 1e-4);
-    const progressed = to.t >= from.t ? loopTime - from.t : loopTime >= from.t ? loopTime - from.t : duration - from.t + loopTime;
-    const alpha = Math.min(Math.max(progressed / segment, 0), 1);
+    const segment = Math.max(to.t - from.t, 1e-4);
+    const alpha = Math.min(Math.max((danceTime - from.t) / segment, 0), 1);
+    const stage = blendStage(from.stage, to.stage, alpha);
     const pose = blendPose(from.joints ?? DEFAULT_POSE, to.joints ?? DEFAULT_POSE, alpha);
 
     const { width, height } = canvas;
-    ctx.fillStyle = "#09090b";
+
+    const gradient = ctx.createLinearGradient(0, 0, 0, height);
+    gradient.addColorStop(0, "#2d2a28");
+    gradient.addColorStop(1, "#1a1917");
+    ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, width, height);
 
-    const points = {} as Record<JointName, JointPoint>;
+    drawStageFloor(ctx, width, height);
+
+    const bodyPixels = {} as Record<JointName, JointPoint>;
     for (const joint of JOINT_ORDER) {
-      points[joint] = toPixels(pose[joint], width, height);
+      bodyPixels[joint] = bodyToCanvasPixels(pose[joint], width, height);
     }
-    const shoulderCenter = midpoint(points.shoulder_l, points.shoulder_r);
-    const hipCenter = midpoint(points.hip_l, points.hip_r);
-    const neck = midpoint(points.head, shoulderCenter);
+    const points = applyStageToSkeleton(bodyPixels, stage, width, height);
 
-    // floor guide line helps read lower-body motion during preview.
-    ctx.strokeStyle = "rgba(255,255,255,0.14)";
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(width * 0.2, height * 0.9);
-    ctx.lineTo(width * 0.8, height * 0.9);
-    ctx.stroke();
+    drawDetailedAvatar(ctx, points, width, height, { isPlaying, facing: stage.facing });
+  }, [poses, duration, danceTime, frame, isPlaying]);
 
-    ctx.fillStyle = "rgba(0,0,0,0.35)";
-    ctx.beginPath();
-    ctx.ellipse(hipCenter.x, height * 0.905, 130, 28, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.strokeStyle = "#e7e5e4";
-    ctx.lineCap = "round";
-    const drawSegment = (a: JointPoint, b: JointPoint, lineWidth: number) => {
-      ctx.lineWidth = lineWidth;
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
-    };
-
-    drawSegment(neck, shoulderCenter, 10);
-    drawSegment(shoulderCenter, hipCenter, 16);
-    drawSegment(points.shoulder_l, points.shoulder_r, 13);
-    drawSegment(points.hip_l, points.hip_r, 12);
-
-    for (const [a, b] of LIMBS) {
-      const isUpperLimb =
-        (a === "shoulder_l" && b === "elbow_l") ||
-        (a === "shoulder_r" && b === "elbow_r") ||
-        (a === "hip_l" && b === "knee_l") ||
-        (a === "hip_r" && b === "knee_r");
-      drawSegment(points[a], points[b], isUpperLimb ? 11 : 9);
-    }
-
-    drawSegment(points.ankle_l, { x: points.ankle_l.x - 32, y: points.ankle_l.y + 8 }, 6);
-    drawSegment(points.ankle_r, { x: points.ankle_r.x + 32, y: points.ankle_r.y + 8 }, 6);
-
-    ctx.strokeStyle = "#fb7185";
-    ctx.lineWidth = 8;
-    ctx.beginPath();
-    ctx.arc(points.head.x, points.head.y, 36, 0, Math.PI * 2);
-    ctx.stroke();
-
-    ctx.fillStyle = "#f5f5f4";
-    for (const joint of JOINT_ORDER) {
-      const p = points[joint];
-      ctx.beginPath();
-      if (joint === "head") {
-        ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-      } else if (joint === "wrist_l" || joint === "wrist_r") {
-        ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
-      } else {
-        ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
-      }
-      ctx.fill();
-    }
-
-    ctx.fillStyle = "rgba(255,255,255,0.65)";
-    ctx.font = "24px Inter, system-ui, sans-serif";
-    ctx.fillText(isPlaying ? "PLAYING" : "PAUSED", 36, 56);
-  }, [poses, duration, loopTime, isPlaying]);
+  const showPlaceholder = !choreography;
 
   return (
-    <canvas
-      ref={(node) => {
-        internalRef.current = node;
-        if (typeof forwardedRef === "function") {
-          forwardedRef(node);
-        } else if (forwardedRef) {
-          forwardedRef.current = node;
-        }
-      }}
-      width={1080}
-      height={1920}
-      className="h-[600px] w-[337px] max-w-full rounded-xl border border-neutral-800 bg-neutral-950"
-    />
+    <div className="relative">
+      <div className="rounded-[2rem] border-2 border-[var(--color-border-strong)] bg-[var(--color-bg-subtle)] p-1.5 shadow-[var(--shadow-card-hover)] ring-1 ring-[var(--color-brand)]/10">
+        <canvas
+          ref={(node) => {
+            internalRef.current = node;
+            if (typeof forwardedRef === "function") {
+              forwardedRef(node);
+            } else if (forwardedRef) {
+              forwardedRef.current = node;
+            }
+          }}
+          width={1080}
+          height={1920}
+          className="block h-[min(80vh,720px)] w-auto max-w-full rounded-[1.5rem] bg-[#1a1917]"
+        />
+      </div>
+      {showPlaceholder && hasAnalysis && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-[2rem] p-8">
+          <p className="max-w-[220px] text-center text-sm leading-relaxed text-[var(--color-text-muted)]">
+            Generate a dance to preview your stick figure
+          </p>
+        </div>
+      )}
+    </div>
   );
 });
 

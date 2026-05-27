@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Literal
 
 import numpy as np
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -16,6 +16,17 @@ except Exception as exc:  # pragma: no cover
 
 
 PitchClass = Literal["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+ALLOWED_AUDIO_SUFFIXES = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".aiff", ".aif"}
+GENERIC_BINARY_TYPES = {"application/octet-stream", "binary/octet-stream"}
+
+
+def _scalar_float(value: float | np.ndarray | np.generic) -> float:
+    """Coerce librosa/numpy outputs (often length-1 arrays) to a plain float."""
+    arr = np.asarray(value)
+    if arr.size == 0:
+        return 0.0
+    return float(arr.reshape(-1)[0])
 
 
 class SpectralBands(BaseModel):
@@ -32,6 +43,9 @@ class AnalyzeResponse(BaseModel):
     spectral_bands: SpectralBands
     key: PitchClass
     duration_seconds: float
+    clip_start_seconds: float
+    clip_end_seconds: float
+    source_duration_seconds: float
 
 
 app = FastAPI(title="Audio Analyzer Service")
@@ -82,14 +96,28 @@ def _onset_per_beat(y: np.ndarray, sr: int, beat_frames: np.ndarray) -> list[flo
     max_env = max(max_env, 1e-6)
 
     for beat_frame in beat_frames[:64]:
-        idx = int(min(max(beat_frame, 0), len(envelope) - 1))
+        frame = int(_scalar_float(beat_frame))
+        idx = int(min(max(frame, 0), len(envelope) - 1))
         scaled = (float(envelope[idx]) / max_env) * 2.0
         onset_values.append(round(scaled, 3))
     return onset_values
 
 
-def analyze_audio_file(file_path: Path) -> AnalyzeResponse:
+def analyze_audio_file(
+    file_path: Path,
+    *,
+    clip_start_seconds: float = 0.0,
+    clip_end_seconds: float | None = None,
+) -> AnalyzeResponse:
     y, sr = librosa.load(str(file_path), sr=None, mono=True)
+    source_duration = float(librosa.get_duration(y=y, sr=sr))
+    clip_start = max(0.0, clip_start_seconds)
+    clip_end = source_duration if clip_end_seconds is None else min(source_duration, clip_end_seconds)
+    if clip_end <= clip_start:
+        clip_end = min(source_duration, clip_start + 5.0)
+    start_sample = int(clip_start * sr)
+    end_sample = int(clip_end * sr)
+    y = y[start_sample:end_sample]
     duration = float(librosa.get_duration(y=y, sr=sr))
 
     tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
@@ -101,14 +129,28 @@ def analyze_audio_file(file_path: Path) -> AnalyzeResponse:
     percussive_ratio = percussive_energy / max(harmonic_energy + percussive_energy, 1e-6)
 
     return AnalyzeResponse(
-        bpm=round(float(tempo), 2),
-        beat_times=[round(float(t), 4) for t in beat_times],
+        bpm=round(_scalar_float(tempo), 2),
+        beat_times=[round(_scalar_float(t), 4) for t in beat_times],
         onset_per_beat=_onset_per_beat(y, sr, beat_frames),
         percussive_ratio=round(float(percussive_ratio), 4),
         spectral_bands=_spectral_bands(y, sr),
         key=_estimate_key(y, sr),
         duration_seconds=round(duration, 3),
+        clip_start_seconds=round(clip_start, 3),
+        clip_end_seconds=round(clip_end, 3),
+        source_duration_seconds=round(source_duration, 3),
     )
+
+
+def _is_allowed_audio_upload(filename: str | None, content_type: str | None) -> bool:
+    suffix = Path(filename or "").suffix.lower()
+    if suffix in ALLOWED_AUDIO_SUFFIXES:
+        return True
+    if content_type and content_type.startswith("audio/"):
+        return True
+    if content_type in GENERIC_BINARY_TYPES and suffix:
+        return True
+    return False
 
 
 @app.get("/health")
@@ -117,11 +159,18 @@ def health() -> dict[str, bool]:
 
 
 @app.post("/analyze", response_model=AnalyzeResponse)
-async def analyze(file: UploadFile = File(...)) -> AnalyzeResponse:
+async def analyze(
+    file: UploadFile = File(...),
+    start_seconds: float = Form(0.0),
+    end_seconds: float | None = Form(None),
+) -> AnalyzeResponse:
     if not file.filename:
         raise HTTPException(status_code=400, detail="Missing file name")
-    if not file.content_type or not file.content_type.startswith("audio/"):
-        raise HTTPException(status_code=400, detail="Only audio uploads are supported")
+    if not _is_allowed_audio_upload(file.filename, file.content_type):
+        raise HTTPException(
+            status_code=400,
+            detail="Only MP3 or WAV audio uploads are supported",
+        )
 
     suffix = Path(file.filename).suffix or ".wav"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
@@ -129,7 +178,11 @@ async def analyze(file: UploadFile = File(...)) -> AnalyzeResponse:
         tmp.write(await file.read())
 
     try:
-        return analyze_audio_file(tmp_path)
+        return analyze_audio_file(
+            tmp_path,
+            clip_start_seconds=start_seconds,
+            clip_end_seconds=end_seconds,
+        )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Failed to analyze audio: {exc}") from exc
     finally:

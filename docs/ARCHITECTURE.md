@@ -129,7 +129,7 @@ How analyzed audio shapes what Claude generates.
 flowchart TD
     subgraph Input["Inputs to choreography"]
         File[Audio file]
-        Style[style: hype | smooth | quirky]
+        Style["style: hype · smooth · quirky"]
     end
 
     subgraph LibrosaOut["POST /analyze response"]
@@ -137,23 +137,26 @@ flowchart TD
         Beats[beat_times]
         Onset[onset_per_beat]
         Perc[percussive_ratio]
-        Spec[spectral_bands<br/>bass · mid · treble]
+        Spec["spectral_bands<br/>bass · mid · treble"]
         Key[key]
     end
 
     subgraph Prompt["Claude user prompt context"]
-        P1[Tempo & key mood]
-        P2[Beat strength → hits vs flows]
-        P3[Percussive → staccato vs smooth]
-        P4[Bass → hip/low body]
-        P5[Treble → wrist detail]
-        P6[8-count phrase arc<br/>groove → develop → peak]
+        P1["Tempo and key mood"]
+        P2["Beat strength — hits vs flows"]
+        P3["Percussive — staccato vs smooth"]
+        P4["Bass — hip and low body"]
+        P5["Treble — wrist detail"]
+        P6["8-count phrase arc<br/>groove — develop — peak"]
     end
 
     subgraph Output["Choreography JSON"]
-        Phrases[phrases[]]
-        KF[keyframes per phrase<br/>13 joints · normalized coords]
+        Phrases["phrases array"]
+        KF["keyframes per phrase<br/>13 joints · normalized coords"]
     end
+
+    Claude["Claude API<br/>cached system prompt"]
+    Renderer[Canvas renderer]
 
     File --> LibrosaOut
     Style --> Prompt
@@ -166,10 +169,15 @@ flowchart TD
     Spec --> P5
     Style --> P6
 
-    P1 & P2 & P3 & P4 & P5 & P6 --> Claude[Claude API<br/>cached system prompt]
+    P1 --> Claude
+    P2 --> Claude
+    P3 --> Claude
+    P4 --> Claude
+    P5 --> Claude
+    P6 --> Claude
     Claude --> Phrases
     Phrases --> KF
-    KF --> Renderer[Canvas renderer]
+    KF --> Renderer
     BPM --> Renderer
     Beats --> Renderer
 ```
