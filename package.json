@@ -1,0 +1,12 @@
+{
+  "name": "tiktok-dance-mvp",
+  "private": true,
+  "scripts": {
+    "dev:web": "pnpm --filter web dev",
+    "dev:api": "cd apps/api && uvicorn main:app --reload --port 8000",
+    "dev": "concurrently \"pnpm dev:web\" \"pnpm dev:api\""
+  },
+  "devDependencies": {
+    "concurrently": "latest"
+  }
+}

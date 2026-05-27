@@ -1,0 +1,52 @@
+[
+  {
+    "id": "step_touch",
+    "name": "Step Touch",
+    "label": "Step right, then left",
+    "difficulty": "easy",
+    "energy": "medium",
+    "durationBeats": 2,
+    "animationClip": "step_touch.glb",
+    "compatibleNext": ["clap", "point_forward", "shoulder_bounce"]
+  },
+  {
+    "id": "clap",
+    "name": "Clap",
+    "label": "Clap twice on the beat",
+    "difficulty": "easy",
+    "energy": "medium",
+    "durationBeats": 2,
+    "animationClip": "clap.glb",
+    "compatibleNext": ["point_forward", "shoulder_bounce", "freeze_pose"]
+  },
+  {
+    "id": "point_forward",
+    "name": "Point Forward",
+    "label": "Point to the camera",
+    "difficulty": "easy",
+    "energy": "medium",
+    "durationBeats": 2,
+    "animationClip": "point_forward.glb",
+    "compatibleNext": ["shoulder_bounce", "freeze_pose"]
+  },
+  {
+    "id": "shoulder_bounce",
+    "name": "Shoulder Bounce",
+    "label": "Bounce shoulders for two counts",
+    "difficulty": "easy",
+    "energy": "medium",
+    "durationBeats": 2,
+    "animationClip": "shoulder_bounce.glb",
+    "compatibleNext": ["clap", "point_forward", "freeze_pose"]
+  },
+  {
+    "id": "freeze_pose",
+    "name": "Freeze Pose",
+    "label": "Hold a final pose",
+    "difficulty": "easy",
+    "energy": "low",
+    "durationBeats": 2,
+    "animationClip": "freeze_pose.glb",
+    "compatibleNext": []
+  }
+]
