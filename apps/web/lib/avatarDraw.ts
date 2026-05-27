@@ -311,7 +311,7 @@ export function drawDetailedAvatar(
   const facing = options.facing ?? 1;
   const floorY = height * 0.905;
 
-  ctx.strokeStyle = "rgba(255,255,255,0.06)";
+  ctx.strokeStyle = "rgba(51, 51, 51, 0.1)";
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(width * 0.15, floorY);
@@ -319,7 +319,7 @@ export function drawDetailedAvatar(
   ctx.stroke();
 
   const shadowScale = 0.85 + Math.min(0.15, Math.abs(points.hip_l.x - points.hip_r.x) * 0.02);
-  ctx.fillStyle = "rgba(245,124,32,0.1)";
+  ctx.fillStyle = "rgba(245, 124, 32, 0.14)";
   ctx.beginPath();
   ctx.ellipse(hipCenter.x, floorY, 115 * shadowScale, 24, 0, 0, Math.PI * 2);
   ctx.fill();

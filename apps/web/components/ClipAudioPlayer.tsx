@@ -2,6 +2,8 @@
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 
+import { dancePlaybackClock, resetDancePlaybackClock } from "@/lib/dancePlayback";
+
 export type ClipAudioPlayerHandle = {
   playFromStart: () => Promise<void>;
   pause: () => void;
@@ -35,6 +37,7 @@ const ClipAudioPlayer = forwardRef<ClipAudioPlayerHandle, Props>(function ClipAu
   const emitRelative = useCallback(
     (seconds: number) => {
       const clamped = Math.max(0, Math.min(seconds, clipDuration));
+      dancePlaybackClock.relativeTime = clamped;
       setRelativeTime(clamped);
       onRelativeTimeChange?.(clamped);
     },
@@ -43,6 +46,7 @@ const ClipAudioPlayer = forwardRef<ClipAudioPlayerHandle, Props>(function ClipAu
 
   const setPlaying = useCallback(
     (playing: boolean) => {
+      dancePlaybackClock.isPlaying = playing;
       setIsPlaying(playing);
       onPlayingChange?.(playing);
     },
@@ -112,6 +116,7 @@ const ClipAudioPlayer = forwardRef<ClipAudioPlayerHandle, Props>(function ClipAu
   }, [isPlaying, clipDuration, clipStart, clipEnd, emitRelative, stopAtClipEnd]);
 
   useEffect(() => {
+    resetDancePlaybackClock();
     emitRelative(0);
     setPlaying(false);
     const audio = audioRef.current;

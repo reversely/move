@@ -10,15 +10,19 @@
   "dependencies": {
     "@ffmpeg/ffmpeg": "latest",
     "@ffmpeg/util": "latest",
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.6.1",
     "next": "latest",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "three": "^0.184.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.0",
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
+    "@types/three": "^0.184.1",
     "tailwindcss": "latest",
     "typescript": "latest"
   }

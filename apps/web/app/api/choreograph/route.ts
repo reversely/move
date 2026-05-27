@@ -12,6 +12,7 @@ import { applyMoveIntensity, lerpJointPoses, movesForPhrase, stageForMove } from
 import { clampStagePhysics } from "@/lib/dancePhysics";
 import { normalizeStage, stageForPhraseFrame } from "@/lib/stageMotion";
 import { choreographySystemPrompt, halfBeatKeyframeInstruction } from "@/lib/choreographyPrompt";
+import { enrichPose } from "@/lib/poseEnrichment";
 import { finalizePose } from "@/lib/poseInterpolation";
 import { catalogSummaryForStyle } from "@/lib/tiktokCatalog";
 import { sequenceSummaryForPrompt } from "@/lib/tiktokMoves";
@@ -126,7 +127,7 @@ function enrichChoreographyStages(choreography: Choreography): Choreography {
       ...phrase,
       keyframes: phrase.keyframes.map((kf) => ({
         ...kf,
-        joints: finalizePose(kf.joints),
+        joints: finalizePose(enrichPose(kf.joints)),
         stage: clampStagePhysics(
           kf.stage ? normalizeStage(kf.stage) : stageForPhraseFrame(phraseIdx, kf.frame_offset),
         ),
@@ -198,7 +199,7 @@ export async function POST(req: Request) {
     : buildLocalDancePlan(body.analysis, body.style, phraseCount);
 
   if (!apiKey) {
-    return NextResponse.json(buildFallback(body.analysis, body.style, phraseCount, plan));
+    return NextResponse.json(enrichChoreographyStages(buildFallback(body.analysis, body.style, phraseCount, plan)));
   }
 
   const choreography = await generateWithClaude(
@@ -222,5 +223,5 @@ export async function POST(req: Request) {
     });
   }
 
-  return NextResponse.json(buildFallback(body.analysis, body.style, phraseCount, plan));
+  return NextResponse.json(enrichChoreographyStages(buildFallback(body.analysis, body.style, phraseCount, plan)));
 }

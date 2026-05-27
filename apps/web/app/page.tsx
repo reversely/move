@@ -10,6 +10,7 @@ import SiteHeader from "@/components/SiteHeader";
 import StickFigureCanvas from "@/components/StickFigureCanvas";
 import StyleSelector from "@/components/StyleSelector";
 import { analyzeSong, generateChoreography } from "@/lib/api";
+import { dancePlaybackClock } from "@/lib/dancePlayback";
 import type { AudioAnalysis, Choreography, ClipRange, DanceStyle } from "@/lib/types";
 
 export default function HomePage() {
@@ -90,6 +91,7 @@ export default function HomePage() {
         phraseCount: phraseCountForClip(analysis),
       });
       setChoreography(result);
+      dancePlaybackClock.relativeTime = 0;
       autoPlayPendingRef.current = true;
     } catch {
       setError("Could not generate choreography. Try again in a moment.");
