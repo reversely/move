@@ -2,18 +2,31 @@ export type DanceStyle = "hype" | "smooth" | "quirky";
 
 export type JointName =
   | "head"
+  | "neck"
+  | "chest"
+  | "spine"
   | "shoulder_l"
   | "shoulder_r"
   | "elbow_l"
   | "elbow_r"
   | "wrist_l"
   | "wrist_r"
+  | "hand_l"
+  | "hand_r"
   | "hip_l"
   | "hip_r"
   | "knee_l"
   | "knee_r"
   | "ankle_l"
-  | "ankle_r";
+  | "ankle_r"
+  | "toe_l"
+  | "toe_r";
+
+/** Original 13 joints — required in stored/API choreography; extras are enriched if omitted. */
+export type CoreJointName = Exclude<
+  JointName,
+  "neck" | "chest" | "spine" | "hand_l" | "hand_r" | "toe_l" | "toe_r"
+>;
 
 export type JointPoint = {
   x: number;

@@ -20,28 +20,54 @@ export type PhysicsSnapshot = {
 };
 
 const BONE_LENGTHS: [JointName, JointName, number][] = [
+  ["neck", "head", 0.12],
+  ["neck", "chest", 0.22],
+  ["chest", "spine", 0.2],
+  ["spine", "hip_l", 0.22],
+  ["spine", "hip_r", 0.22],
   ["shoulder_l", "elbow_l", 0.28],
   ["elbow_l", "wrist_l", 0.3],
+  ["wrist_l", "hand_l", 0.1],
   ["shoulder_r", "elbow_r", 0.28],
   ["elbow_r", "wrist_r", 0.3],
+  ["wrist_r", "hand_r", 0.1],
   ["hip_l", "knee_l", 0.4],
   ["knee_l", "ankle_l", 0.48],
+  ["ankle_l", "toe_l", 0.12],
   ["hip_r", "knee_r", 0.4],
   ["knee_r", "ankle_r", 0.48],
+  ["ankle_r", "toe_r", 0.12],
 ];
 
-const LOOSE_FOR_GRAVITY: JointName[] = ["wrist_l", "wrist_r", "elbow_l", "elbow_r", "head"];
+const LOOSE_FOR_GRAVITY: JointName[] = [
+  "wrist_l",
+  "wrist_r",
+  "hand_l",
+  "hand_r",
+  "elbow_l",
+  "elbow_r",
+  "head",
+  "toe_l",
+  "toe_r",
+];
 
 const JOINT_STIFFNESS: Partial<Record<JointName, number>> = {
   head: 16,
+  neck: 18,
+  chest: 22,
+  spine: 22,
   ankle_l: 28,
   ankle_r: 28,
+  toe_l: 14,
+  toe_r: 14,
   knee_l: 24,
   knee_r: 24,
   hip_l: 20,
   hip_r: 20,
   wrist_l: 12,
   wrist_r: 12,
+  hand_l: 10,
+  hand_r: 10,
 };
 
 export function createPhysicsSnapshot(pose: Record<JointName, JointPoint>): PhysicsSnapshot {
@@ -91,9 +117,13 @@ function enforceBone(
 }
 
 /** Keep limb segments at plausible lengths. */
-export function enforceBoneLengths(pose: Record<JointName, JointPoint>): Record<JointName, JointPoint> {
+export function enforceBoneLengths(
+  pose: Record<JointName, JointPoint>,
+  passes = 2,
+): Record<JointName, JointPoint> {
   const out = { ...pose } as Record<JointName, JointPoint>;
-  for (let pass = 0; pass < 2; pass += 1) {
+  const count = Math.max(1, Math.min(passes, 3));
+  for (let pass = 0; pass < count; pass += 1) {
     for (const [parent, child, len] of BONE_LENGTHS) {
       enforceBone(out, parent, child, len);
     }

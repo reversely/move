@@ -70,7 +70,6 @@ const ClipAudioPlayer = forwardRef<ClipAudioPlayerHandle, Props>(function ClipAu
         stopAtClipEnd();
         return;
       }
-      emitRelative(audio.currentTime - clipStart);
     };
 
     const onPlay = () => {
@@ -92,6 +91,25 @@ const ClipAudioPlayer = forwardRef<ClipAudioPlayerHandle, Props>(function ClipAu
       audio.removeEventListener("pause", onPause);
     };
   }, [clipStart, clipEnd, emitRelative, setPlaying, stopAtClipEnd]);
+
+  /** ~60fps clock while playing — HTML timeupdate alone is ~4Hz and makes dance stutter. */
+  useEffect(() => {
+    if (!isPlaying || clipDuration <= 0) return;
+    let raf = 0;
+    const tick = () => {
+      const audio = audioRef.current;
+      if (audio && !audio.paused) {
+        if (audio.currentTime >= clipEnd - 0.05) {
+          stopAtClipEnd();
+          return;
+        }
+        emitRelative(audio.currentTime - clipStart);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [isPlaying, clipDuration, clipStart, clipEnd, emitRelative, stopAtClipEnd]);
 
   useEffect(() => {
     emitRelative(0);

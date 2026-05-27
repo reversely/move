@@ -1,12 +1,12 @@
 "use client";
 
-import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useEffect, useMemo, useRef } from "react";
 
 import { drawDetailedAvatar } from "@/lib/avatarDraw";
-import { BASE_POSE } from "@/lib/basePose";
+import { BASE_POSE, JOINT_NAMES } from "@/lib/basePose";
 import { clampStagePhysics } from "@/lib/dancePhysics";
-import { easeInOutQuint, interpolatePoseAtTime } from "@/lib/poseInterpolation";
-import { blendStage, DEFAULT_STAGE } from "@/lib/stageMotion";
+import { interpolatePoseAtTime, smoothTowardPose } from "@/lib/poseInterpolation";
+import { DEFAULT_STAGE, interpolateStageAtTime, smoothTowardStage } from "@/lib/stageMotion";
 import { applyStageToSkeleton, bodyToCanvasPixels } from "@/lib/stageRender";
 import type { Choreography, JointName, JointPoint, StageTransform } from "@/lib/types";
 
@@ -25,21 +25,8 @@ type TimedPose = {
   stage: StageTransform;
 };
 
-const JOINT_ORDER: JointName[] = [
-  "head",
-  "shoulder_l",
-  "shoulder_r",
-  "elbow_l",
-  "elbow_r",
-  "wrist_l",
-  "wrist_r",
-  "hip_l",
-  "hip_r",
-  "knee_l",
-  "knee_r",
-  "ankle_l",
-  "ankle_r",
-];
+/** Per-frame exponential smoothing (~12Hz time constant at 60fps). */
+const DISPLAY_SMOOTH = 0.32;
 
 function useTimedPoses(choreography: Choreography | null, bpm: number): { poses: TimedPose[]; duration: number } {
   return useMemo(() => {
@@ -92,6 +79,9 @@ const StickFigureCanvas = forwardRef<HTMLCanvasElement, Props>(function StickFig
   forwardedRef,
 ) {
   const internalRef = useRef<HTMLCanvasElement | null>(null);
+  const smoothedPoseRef = useRef<Record<JointName, JointPoint> | null>(null);
+  const smoothedStageRef = useRef<StageTransform | null>(null);
+  const lastDanceTimeRef = useRef(0);
   const { poses, duration } = useTimedPoses(choreography, bpm);
   const maxDanceTime =
     clipDuration != null && clipDuration > 0
@@ -99,18 +89,12 @@ const StickFigureCanvas = forwardRef<HTMLCanvasElement, Props>(function StickFig
       : duration;
   const danceTime =
     maxDanceTime > 0 ? Math.min(Math.max(0, playbackTime), maxDanceTime - 1e-4) : 0;
-  const [frame, setFrame] = useState(0);
 
   useEffect(() => {
-    if (!isPlaying || !choreography) return;
-    let raf = 0;
-    const tick = () => {
-      setFrame((n) => n + 1);
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [isPlaying, choreography]);
+    smoothedPoseRef.current = null;
+    smoothedStageRef.current = null;
+    lastDanceTimeRef.current = 0;
+  }, [choreography, bpm]);
 
   useEffect(() => {
     const canvas = internalRef.current;
@@ -118,26 +102,20 @@ const StickFigureCanvas = forwardRef<HTMLCanvasElement, Props>(function StickFig
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    let from = poses[0];
-    let to = poses.length > 1 ? poses[1] : poses[0];
-    for (let i = 0; i < poses.length - 1; i += 1) {
-      const current = poses[i];
-      const next = poses[i + 1];
-      if (danceTime >= current.t && danceTime < next.t) {
-        from = current;
-        to = next;
-        break;
-      }
-      if (i === poses.length - 2 && danceTime >= next.t) {
-        from = next;
-        to = next;
-      }
+    if (Math.abs(danceTime - lastDanceTimeRef.current) > 0.2) {
+      smoothedPoseRef.current = null;
+      smoothedStageRef.current = null;
     }
+    lastDanceTimeRef.current = danceTime;
 
-    const segment = Math.max(to.t - from.t, 1e-4);
-    const alpha = easeInOutQuint(Math.min(Math.max((danceTime - from.t) / segment, 0), 1));
-    const stage = blendStage(from.stage, to.stage, alpha);
-    const pose = interpolatePoseAtTime(poses, danceTime, BASE_POSE);
+    const targetPose = interpolatePoseAtTime(poses, danceTime, BASE_POSE, { playback: true });
+    const targetStage = interpolateStageAtTime(poses, danceTime, DEFAULT_STAGE);
+
+    const smoothFactor = isPlaying ? DISPLAY_SMOOTH : 1;
+    const pose = smoothTowardPose(smoothedPoseRef.current, targetPose, smoothFactor);
+    const stage = smoothTowardStage(smoothedStageRef.current, targetStage, smoothFactor);
+    smoothedPoseRef.current = pose;
+    smoothedStageRef.current = stage;
 
     const { width, height } = canvas;
 
@@ -150,13 +128,13 @@ const StickFigureCanvas = forwardRef<HTMLCanvasElement, Props>(function StickFig
     drawStageFloor(ctx, width, height);
 
     const bodyPixels = {} as Record<JointName, JointPoint>;
-    for (const joint of JOINT_ORDER) {
+    for (const joint of JOINT_NAMES) {
       bodyPixels[joint] = bodyToCanvasPixels(pose[joint], width, height);
     }
     const points = applyStageToSkeleton(bodyPixels, stage, width, height);
 
     drawDetailedAvatar(ctx, points, width, height, { isPlaying, facing: stage.facing });
-  }, [poses, duration, danceTime, frame, isPlaying]);
+  }, [poses, danceTime, isPlaying]);
 
   const showPlaceholder = !choreography;
 
@@ -180,7 +158,7 @@ const StickFigureCanvas = forwardRef<HTMLCanvasElement, Props>(function StickFig
       {showPlaceholder && hasAnalysis && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-[2rem] p-8">
           <p className="max-w-[220px] text-center text-sm leading-relaxed text-[var(--color-text-muted)]">
-            Generate a dance to preview your stick figure
+            Generate a dance to preview your dancer
           </p>
         </div>
       )}

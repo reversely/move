@@ -15,27 +15,12 @@ import { choreographySystemPrompt, halfBeatKeyframeInstruction } from "@/lib/cho
 import { finalizePose } from "@/lib/poseInterpolation";
 import { catalogSummaryForStyle } from "@/lib/tiktokCatalog";
 import { sequenceSummaryForPrompt } from "@/lib/tiktokMoves";
-import type { AudioAnalysis, Choreography, DanceStyle, JointName } from "@/lib/types";
-
-const JOINT_NAMES: JointName[] = [
-  "head",
-  "shoulder_l",
-  "shoulder_r",
-  "elbow_l",
-  "elbow_r",
-  "wrist_l",
-  "wrist_r",
-  "hip_l",
-  "hip_r",
-  "knee_l",
-  "knee_r",
-  "ankle_l",
-  "ankle_r",
-];
+import { CORE_JOINT_NAMES } from "@/lib/basePose";
+import type { AudioAnalysis, Choreography, DanceStyle } from "@/lib/types";
 
 const FRAME_OFFSETS = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8];
 
-const DANCE_ANALYSIS_SYSTEM = `You are an expert TikTok choreographer who plans dances for a 13-joint stick figure with viral move vocabulary.
+const DANCE_ANALYSIS_SYSTEM = `You are an expert TikTok choreographer who plans dances for a 19-joint dance mannequin with viral move vocabulary.
 Know: Renegade, Say So, Savage, Blinding Lights, Lottery, About Damn Time, Unholy, Griddy.
 Plan 8-count phrases with DISTINCT move combos, accent_beats on hard hits, and stage travel (walk, turn, jump_land, slide).
 ${halfBeatKeyframeInstruction()}
@@ -115,7 +100,7 @@ function validateChoreography(value: unknown): value is Choreography {
       if (typeof frame.frame_offset !== "number" || !frame.joints || typeof frame.joints !== "object") {
         return false;
       }
-      const jointsOk = JOINT_NAMES.every((name) => {
+      const jointsOk = CORE_JOINT_NAMES.every((name) => {
         const point = (frame.joints as Record<string, unknown>)[name] as { x?: unknown; y?: unknown } | undefined;
         return point && typeof point.x === "number" && typeof point.y === "number";
       });

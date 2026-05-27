@@ -1,20 +1,5 @@
+import { JOINT_NAMES } from "@/lib/basePose";
 import type { JointName, JointPoint, StageTransform } from "@/lib/types";
-
-const JOINT_NAMES: JointName[] = [
-  "head",
-  "shoulder_l",
-  "shoulder_r",
-  "elbow_l",
-  "elbow_r",
-  "wrist_l",
-  "wrist_r",
-  "hip_l",
-  "hip_r",
-  "knee_l",
-  "knee_r",
-  "ankle_l",
-  "ankle_r",
-];
 
 function midpoint(a: JointPoint, b: JointPoint): JointPoint {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };

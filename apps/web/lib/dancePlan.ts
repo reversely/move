@@ -125,7 +125,7 @@ export function buildChoreographyFromPlanPrompt(
   phraseCount: number,
   plan: DancePlan,
 ): string {
-  return `Generate stick-figure keyframe choreography from this dance plan.
+  return `Generate mannequin keyframe choreography from this dance plan.
 
 DANCE PLAN:
 ${JSON.stringify(plan, null, 2)}
@@ -153,7 +153,7 @@ Phrase move arcs (vary every phrase):
 - Lottery/Griddy: low bounce → hit dem folk → griddy footwork
 
 Return ONLY JSON:
-{ "phrases": [{ "beat": number, "duration_beats": 8, "keyframes": [{ "frame_offset": number, "joints": { head, shoulder_l, shoulder_r, elbow_l, elbow_r, wrist_l, wrist_r, hip_l, hip_r, knee_l, knee_r, ankle_l, ankle_r }, "stage": { "x", "y", "rotation", "flip", "facing", "head_turn" } }] }] }
+{ "phrases": [{ "beat": number, "duration_beats": 8, "keyframes": [{ "frame_offset": number, "joints": { head, neck, chest, spine, shoulder_l, shoulder_r, elbow_l, elbow_r, wrist_l, wrist_r, hand_l, hand_r, hip_l, hip_r, knee_l, knee_r, ankle_l, ankle_r, toe_l, toe_r }, "stage": { "x", "y", "rotation", "flip", "facing", "head_turn" } }] }] }
 
 Stage examples:
 - walk_right: x goes -0.6 → 0.6 over 8 beats, subtle y bounce on steps

@@ -1,7 +1,8 @@
 import type { StageTransform } from "@/lib/types";
 
-import { easeInOutQuint } from "@/lib/poseInterpolation";
+import { easeInOutCubic, findPoseSegment, playbackEase } from "@/lib/poseInterpolation";
 import { clampStagePhysics, jumpArcY } from "@/lib/dancePhysics";
+import type { TimedPoseInput } from "@/lib/poseInterpolation";
 
 export const DEFAULT_STAGE: StageTransform = {
   x: 0,
@@ -32,14 +33,62 @@ function lerp(a: number, b: number, t: number): number {
 }
 
 export function blendStage(a: StageTransform, b: StageTransform, t: number): StageTransform {
-  const e = easeInOutQuint(t);
+  const e = easeInOutCubic(t);
+  const facingBlend = e >= 0.88 ? b.facing : e <= 0.12 ? a.facing : a.facing;
   return normalizeStage({
     x: lerp(a.x, b.x, e),
     y: lerp(a.y, b.y, e),
     rotation: lerp(a.rotation, b.rotation, e),
     flip: 0,
-    facing: e < 0.5 ? a.facing : b.facing,
+    facing: facingBlend,
     head_turn: lerp(a.head_turn, b.head_turn, e),
+  });
+}
+
+type TimedStageInput = TimedPoseInput & { stage?: StageTransform };
+
+/** Match pose timeline — smooth stage travel during playback. */
+export function interpolateStageAtTime(
+  poses: TimedStageInput[],
+  danceTime: number,
+  defaultStage: StageTransform = DEFAULT_STAGE,
+): StageTransform {
+  if (!poses.length) return defaultStage;
+  if (poses.length === 1) return normalizeStage(poses[0].stage ?? defaultStage);
+  if (danceTime <= poses[0].t) return normalizeStage(poses[0].stage ?? defaultStage);
+  const last = poses[poses.length - 1];
+  if (danceTime >= last.t) return normalizeStage(last.stage ?? defaultStage);
+
+  const { i1, i2, rawT } = findPoseSegment(poses, danceTime);
+  const s1 = normalizeStage(poses[i1].stage ?? defaultStage);
+  const s2 = normalizeStage(poses[i2].stage ?? defaultStage);
+  const e = playbackEase(rawT);
+
+  return normalizeStage({
+    x: lerp(s1.x, s2.x, e),
+    y: lerp(s1.y, s2.y, e),
+    rotation: lerp(s1.rotation, s2.rotation, e),
+    flip: 0,
+    facing: e >= 0.88 ? s2.facing : s1.facing,
+    head_turn: lerp(s1.head_turn, s2.head_turn, e),
+  });
+}
+
+/** Frame-to-frame stage smoothing. */
+export function smoothTowardStage(
+  current: StageTransform | null,
+  target: StageTransform,
+  factor: number,
+): StageTransform {
+  if (!current) return target;
+  const t = Math.min(1, Math.max(0.1, factor));
+  return normalizeStage({
+    x: lerp(current.x, target.x, t),
+    y: lerp(current.y, target.y, t),
+    rotation: lerp(current.rotation, target.rotation, t),
+    flip: 0,
+    facing: t > 0.5 ? target.facing : current.facing,
+    head_turn: lerp(current.head_turn, target.head_turn, t),
   });
 }
 
